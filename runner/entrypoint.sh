@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # cron-runner — dedicated GitHub Actions runner entrypoint.
-# Registers once (persistent, NOT ephemeral, --replace) and never deregisters
-# on shutdown; restarts reuse the on-disk registration with zero API calls.
+#
+# Fresh registration per container: on first boot the previous registration
+# (if any) is deleted and a new one is created under the same name. Deleting
+# the entry also drops any session an unclean shutdown left behind, so the
+# listener never enters GitHub's 4-minute session-conflict retry loop.
+# Within a container's lifetime, listener exits with rc=5 (SessionConflict)
+# re-register and restart immediately instead of waiting out the lease.
+#
 # RUNNER_MAX_LIFETIME (seconds, default 24h, 0 = off) stops the listener while
 # idle so `restart: always` recreates the container from the image, wiping
-# non-persisted state while keeping the registration.
+# non-persisted state.
 set -uo pipefail
 
 API="https://api.github.com"
@@ -68,22 +74,19 @@ sweep() { # sweep zombies — delete offline leftover runners with our prefix
     done
 }
 
-# Registration: only when no on-disk config exists.
-if [ -f .runner ]; then
-    echo "[entrypoint] reusing existing registration for ${RUNNER_NAME} (no API calls)"
-else
+register() { # register/re-claim the runner name with --replace (idempotent)
     if [ -z "${GH_TOKEN_LOCAL}" ]; then
-        echo "[entrypoint] FATAL: GH_TOKEN required to register the runner (first boot or recreated container)" >&2
+        echo "[entrypoint] FATAL: GH_TOKEN required to register the runner" >&2
         exit 1
     fi
     sweep zombies
+    local TOKEN
     TOKEN="$(mint_token "/runners/registration-token")" || {
         echo "[entrypoint] FATAL: could not mint registration token" >&2
         exit 1
     }
     echo "[entrypoint] registration token minted (expires in 1h)"
-
-    CONFIG_ARGS=(
+    local CONFIG_ARGS=(
         --unattended
         --url "${RUNNER_URL}"
         --token "${TOKEN}"
@@ -93,19 +96,52 @@ else
         --work "_work"
     )
     [ -n "${RUNNER_LABELS:-}" ] && CONFIG_ARGS+=(--labels "${RUNNER_LABELS}")
-
-    ./config.sh "${CONFIG_ARGS[@]}"
-    unset TOKEN RUNNER_URL CONFIG_ARGS
+    if ! ./config.sh "${CONFIG_ARGS[@]}"; then
+        echo "[entrypoint] FATAL: config.sh failed" >&2
+        exit 1
+    fi
+    unset TOKEN CONFIG_ARGS
     echo "[entrypoint] registered as ${RUNNER_NAME} (dedicated)"
+}
+
+# Wipe the previous generation's registration. Two halves, both required:
+# the API delete drops the agent entry (and any session an unclean shutdown
+# left behind), the local rm clears .runner/.credentials — config.sh refuses
+# to reconfigure while those exist, --replace alone does not help.
+clear_previous() {
+    [ -f .runner ] || return 0
+    local ID
+    ID="$(jq -r '.agentId // empty' .runner 2>/dev/null || true)"
+    if [ -n "${ID}" ]; then
+        api DELETE "/runners/${ID}" >/dev/null 2>&1 || true   # 404 = already gone
+        echo "[entrypoint] removed previous registration (agent id ${ID})"
+    fi
+    rm -f .runner .credentials .credentials_rsaparams
+}
+
+if [ ! -f /tmp/.registered ]; then
+    clear_previous
+    register
+    touch /tmp/.registered
 fi
 
 # Run + lifetime watchdog.
 LIFETIME="${RUNNER_MAX_LIFETIME:-86400}"
 
-echo "[entrypoint] starting Runner.Listener as ${RUNNER_NAME} (PID $$)"
-./run.sh &
-RUNNER_PID=$!
-trap 'kill -TERM "${RUNNER_PID}" 2>/dev/null || true' TERM INT
+run_listener() {
+    echo "[entrypoint] starting Runner.Listener as ${RUNNER_NAME} (PID $$)"
+    ./run.sh &
+    RUNNER_PID=$!
+    trap 'kill -TERM "${RUNNER_PID}" 2>/dev/null || true' TERM INT
+    wait "${RUNNER_PID}"; RC=$?
+    if [ "${RC}" -gt 128 ]; then                       # trap interrupted wait
+        wait "${RUNNER_PID}"; RC=$?
+    fi
+    if [ -n "${WATCHDOG_PID:-}" ]; then                # stop a pending reset
+        kill "${WATCHDOG_PID}" 2>/dev/null || true
+    fi
+    return "${RC}"
+}
 
 # idle check: Runner.Worker exists only while a job runs (comm truncated
 # to 15 chars, so the exact name match still works).
@@ -122,15 +158,24 @@ if [ "${LIFETIME}" -gt 0 ] 2>/dev/null; then
         sleep "${LIFETIME}"
         until idle; do sleep 30; done   # never reset mid-job
         echo "[entrypoint] lifetime reached and runner idle; stopping for a clean reset"
-        kill -TERM "${RUNNER_PID}" 2>/dev/null || true
+        kill -TERM "${RUNNER_PID:-}" 2>/dev/null || true
     ) &
     WATCHDOG_PID=$!
 fi
 
-wait "${RUNNER_PID}"; RC=$?
-[ "${RC}" -gt 128 ] && wait "${RUNNER_PID}" 2>/dev/null   # trap interrupted wait
-if [ -n "${WATCHDOG_PID:-}" ]; then                       # stop a pending reset
-    kill "${WATCHDOG_PID}" 2>/dev/null || true
+run_listener
+RC=$?
+
+# rc=5 (SessionConflict) means an orphaned session still holds the runner
+# entry (e.g. GitHub-side race right after a recreate). Don't wait for the
+# session lease: re-register with --replace and restart immediately.
+if [ "${RC}" -eq 5 ]; then
+    echo "[entrypoint] session conflict; re-registering with --replace"
+    register
+    touch /tmp/.registered
+    run_listener
+    RC=$?
 fi
+
 echo "[entrypoint] runner exited (rc=${RC}); restart:always recreates the container"
 exit "${RC}"
