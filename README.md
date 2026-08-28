@@ -37,6 +37,8 @@ docker compose up -d --build
 
 That's it. The scheduler starts dispatching, and the runner pool registers itself under **Settings → Actions → Runners** in your repo.
 
+> **Running on a PaaS (Dokploy, Coolify, Railway…)?** Skip the clone-and-mount flow: point the deploy at this repo, set env vars (`GH_TOKEN`, `GH_REPO`, `CRONTAB`, …), and deploy only the **scheduler** service (a plain `alpine`-based image — no build needed). The **runner** needs bind mounts for hardening; run it on a Docker host (locally or a VPS) as shown below. Schedules are configured via the `CRONTAB` env var — no files.
+
 ### 1. `.env`
 
 ```ini
@@ -59,7 +61,7 @@ jobs:
         runs-on: [self-hosted, cronrunner]
 ```
 
-### 2. `crontab`
+### 2. Schedule
 
 Standard cron syntax plus dispatch fields — no shell, just workflow triggers:
 
@@ -70,13 +72,23 @@ Standard cron syntax plus dispatch fields — no shell, just workflow triggers:
 # │ │ │ ┌───────────── month (1-12)
 # │ │ │ │ ┌───────────── day of week (0-6, Sunday=0)
 # │ │ │ │ │
-* * * * *  TYPE  OWNER/REPO  WORKFLOW  REF
+* * * * *  /scheduler/dispatch.sh  TYPE  OWNER/REPO  WORKFLOW  REF
 
-*/10 * * * *  workflow  owner/repo  update.yml   main
-0 3 * * *     workflow  owner/repo  nightly.yml  develop
+*/10 * * * *  /scheduler/dispatch.sh  workflow  owner/repo  update.yml   main
+0 3 * * *     /scheduler/dispatch.sh  workflow  owner/repo  nightly.yml  develop
 ```
 
 Every tick POSTs to `POST /repos/{owner}/{repo}/actions/workflows/{workflow}/dispatches` and logs the result (`204` = dispatched). A failed dispatch (network blip, rate limit) is logged and simply retried on the next tick.
+
+Two ways to provide it — first match wins:
+
+- **`CRONTAB` env var** (PaaS/Dokploy path): pipe-separated entries. Pipes are illegal in cron fields, so the split is unambiguous.
+
+  ```ini
+  CRONTAB=*/10 * * * * /scheduler/dispatch.sh workflow owner/repo update.yml main|0 3 * * * /scheduler/dispatch.sh workflow owner/repo nightly.yml develop
+  ```
+
+- **`crontab` file** (docker compose path): `cp crontab.example crontab`, edit (gitignored), mounted read-only at `/etc/crontabs/root`.
 
 ### 3. Scale the pool (optional)
 

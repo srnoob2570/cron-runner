@@ -10,4 +10,8 @@
 #
 # Lines starting with # are ignored. No shell commands — dispatch.sh only
 # triggers GitHub Actions workflows.
+#
+# PaaS/Dokploy alternative: instead of this file, set the CRONTAB env var with
+# pipe-separated entries:
+#   CRONTAB=*/10 * * * * /scheduler/dispatch.sh workflow owner/repo update.yml main
 */10 * * * * /scheduler/dispatch.sh workflow owner/repo update.yml main

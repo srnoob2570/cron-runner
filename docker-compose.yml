@@ -9,8 +9,15 @@ services:
     restart: always
     environment:
       GH_TOKEN: ${GH_TOKEN}
+      # Pipe-separated cron entries, e.g.:
+      #   CRONTAB: '*/10 * * * * /scheduler/dispatch.sh workflow owner/repo wf.yml main'
+      # Takes precedence over the crontab file — this is how PaaS/Dokploy
+      # deployments configure schedules (no bind mounts needed).
+      CRONTAB: ${CRONTAB:-}
     volumes:
       - ./scheduler:/scheduler:ro
+      # Local-compose path: schedule in a file (gitignored). Optional —
+      # if absent, set the CRONTAB env var instead.
       - ./crontab:/etc/crontabs/root:ro
     command: ["/bin/sh", "/scheduler/entrypoint.sh"]
     cap_drop: ["ALL"]

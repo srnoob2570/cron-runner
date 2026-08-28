@@ -1,10 +1,27 @@
 #!/bin/sh
 # cronrunner scheduler bootstrap.
-# The crontab file is bind-mounted at /etc/crontabs/root (see docker-compose.yml).
+#
+# Schedules come from (first match wins):
+#   1. $CRONTAB env var — pipe-separated entries, e.g.
+#        CRONTAB='*/10 * * * * /scheduler/dispatch.sh workflow owner/repo wf.yml main'
+#      This is the PaaS/Dokploy path: no bind mounts, one env var in the UI.
+#   2. A crontab file mounted at /etc/crontabs/root (docker-compose local path).
 set -eu
 
-if [ ! -f /etc/crontabs/root ]; then
-    echo "FATAL: no crontab mounted. Create one: cp crontab.example crontab" >&2
+CRON_DIR=/etc/crontabs
+CRON_FILE=$CRON_DIR/root
+
+if [ -n "${CRONTAB:-}" ]; then
+    # One entry per pipe; pipes are illegal in cron fields, so this is unambiguous.
+    # busybox crond reads files named after the user in its -c dir, so the env
+    # crontab must land at <dir>/root. /tmp is a tmpfs mount — nothing touches
+    # the container filesystem proper.
+    CRON_DIR=/tmp/crontabs
+    CRON_FILE=$CRON_DIR/root
+    mkdir -p "$CRON_DIR"
+    printf '%s\n' "$CRONTAB" | tr '|' '\n' > "$CRON_FILE"
+elif [ ! -f "$CRON_FILE" ]; then
+    echo "FATAL: no schedule. Set the CRONTAB env var or mount a file at $CRON_FILE." >&2
     exit 1
 fi
 
@@ -20,6 +37,6 @@ while read -r min hr dom mon dow cmd rest; do
     case "$min" in
         '*/'*|'*') "$cmd" $rest || true ;;
     esac
-done < /etc/crontabs/root
+done < "$CRON_FILE"
 
-exec crond -f -l 2
+exec crond -f -l 2 -c "$(dirname "$CRON_FILE")"
