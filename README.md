@@ -47,6 +47,7 @@ GH_REPO=owner/repo      # where runners register and workflows live
 # GH_ORG=your-org       # when RUNNER_SCOPE=org
 
 RUNNER_LABELS=self-hosted,cronrunner   # optional, targets the pool
+RUNNER_NAME_PREFIX=cronrunner          # optional; runner name = <prefix>-runner-1
 ```
 
 Point your workflow at the pool:
@@ -101,19 +102,21 @@ Everything else is available to jobs through standard `setup-*` actions (they do
 ```text
         ┌──────────────────────────────────────────────────────┐
         │  container boot                                      │
-        │  1. mint registration token (GH_TOKEN, expires 1h)   │
-        │  2. unset GH_TOKEN — never visible to jobs           │
-        │  3. config.sh --ephemeral --disableupdate            │
-        │  4. run.sh → waits for exactly ONE job               │
-        │  5. job runs → runner exits, self-deregisters,       │
+        │  1. sweep offline leftover runners (crash zombies)   │
+        │  2. mint registration token (GH_TOKEN, expires 1h)   │
+        │  3. unset GH_TOKEN — never visible to jobs           │
+        │  4. config.sh --ephemeral --disableupdate            │
+        │  5. run.sh → waits for exactly ONE job               │
+        │  6. job runs → runner exits, self-deregisters,       │
         │     wipes its local config                           │
-        │  6. container dies → restart: always → back to 1     │
+        │  7. shutdown cleanup: config.sh remove + API check   │
+        │  8. container dies → restart: always → back to 1     │
         └──────────────────────────────────────────────────────┘
 ```
 
-Ephemerality is the security model: a compromised runner cannot persist, cannot accept a second job, and holds at most a 1-hour-old single-use token. GitHub auto-deregisters ephemeral runners after one job.
+Ephemerality is the security model: a compromised runner cannot persist, cannot accept a second job, and holds at most a 1-hour-old single-use token. GitHub auto-deregisters ephemeral runners after one job — and cronrunner **enforces** it: after every container exit, the entrypoint removes the registration (`config.sh remove`) and verifies via the API that no runner remains under its name. If a container dies without a clean exit (SIGKILL, host reboot), the next pool container sweeps offline leftovers with the same prefix at boot.
 
-**Note:** if you kill an _idle_ runner container (restart, redeploy), GitHub shows it as _offline_ — it never completed its job, so it couldn't self-deregister. Clean up occasionally:
+Runners are named `<RUNNER_NAME_PREFIX>-<hostname>` (e.g. `cronrunner-runner-1`), so they're easy to recognize in **Settings → Actions → Runners**. If a runner somehow lingers as _offline_ (never completed a job → no self-deregistration), clean it manually:
 
 ```bash
 gh api repos/OWNER/REPO/actions/runners --jq '.runners[] | select(.status=="offline") | .id'

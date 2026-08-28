@@ -34,6 +34,11 @@ services:
     image: cronrunner-runner:latest
     restart: always
     env_file: .env
+    environment:
+      # Stable hostname -> stable runner name (e.g. cronrunner-runner-1),
+      # so post-shutdown deregistration can be verified by name.
+      RUNNER_NAME_PREFIX: ${RUNNER_NAME_PREFIX:-cronrunner}
+    hostname: runner-1
     # Hardening: no docker socket, no privileged, no host paths, minimal caps.
     cap_drop: ["ALL"]
     security_opt:
