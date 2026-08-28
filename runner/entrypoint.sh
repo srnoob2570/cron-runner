@@ -39,10 +39,12 @@ case "${SCOPE}" in
     *) echo "[entrypoint] FATAL: RUNNER_SCOPE must be 'repo' or 'org'" >&2; exit 1 ;;
 esac
 
-# Recognizable runner names: PREFIX-HOSTNAME (e.g. cron-runner-runner-1).
-# Set RUNNER_NAME to override entirely.
+# Recognizable runner name: the prefix itself (e.g. cron-runner), stable
+# across container recreations (--replace reclaims it). Set RUNNER_NAME to
+# override entirely; set a distinct RUNNER_NAME_PREFIX per pool if you run
+# several on the same host.
 RUNNER_NAME_PREFIX="${RUNNER_NAME_PREFIX:-cron-runner}"
-RUNNER_NAME="${RUNNER_NAME:-${RUNNER_NAME_PREFIX}-$(hostname)}"
+RUNNER_NAME="${RUNNER_NAME:-${RUNNER_NAME_PREFIX}}"
 
 GH_TOKEN_LOCAL="${GH_TOKEN:-}"   # non-exported: visible to api()/mint_token only
 unset GH_TOKEN GH_REPO GH_ORG
@@ -70,7 +72,7 @@ mint_token() { # mint_token ENDPOINT -> token on stdout
 sweep() { # sweep zombies — delete offline leftover runners with our prefix
     local ids id
     ids="$(api GET "/runners?per_page=100" 2>/dev/null | jq -r \
-        --arg prefix "${RUNNER_NAME_PREFIX}-" '
+        --arg prefix "${RUNNER_NAME_PREFIX}" '
         .runners[]?
         | select((.name | startswith($prefix)) and .status == "offline")
         | .id' 2>/dev/null)" || ids=""

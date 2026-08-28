@@ -37,7 +37,20 @@ docker compose up -d --build
 
 That's it. The scheduler starts dispatching, and the runner pool registers itself under **Settings → Actions → Runners** in your repo.
 
-> **Running on a PaaS (Dokploy, Coolify, Railway…)?** Skip the clone-and-mount flow: point the deploy at this repo, set env vars (`GH_TOKEN`, `GH_REPO`, `CRONTAB`, …), and deploy only the **scheduler** service (a plain `alpine`-based image — no build needed). The **runner** needs bind mounts for hardening; run it on a Docker host (locally or a VPS) as shown below. Schedules are configured via the `CRONTAB` env var — no files.
+> **Running on a PaaS (Dokploy, Coolify, Railway…)?** Split the two services: deploy **`docker-compose.scheduler.yml`** (or just the `scheduler/` scripts — a plain `alpine`-based image, no build) wherever your PaaS runs, and **`docker-compose.runner.yml`** on a Docker host (locally or a VPS). Both read the same `.env`; the scheduler uses the `CRONTAB` env var, so no files are needed on the PaaS side.
+
+**Prefer scheduler and runner apart?** Each half ships its own compose file:
+
+```bash
+# scheduler only (PaaS-friendly, no build)
+docker compose -f docker-compose.scheduler.yml up -d
+
+# runner only (Docker host)
+docker compose -f docker-compose.runner.yml up -d --build
+
+# both on one host (as before)
+docker compose up -d --build
+```
 
 ### 1. `.env`
 
@@ -49,7 +62,7 @@ GH_REPO=owner/repo      # where runners register and workflows live
 # GH_ORG=your-org       # when RUNNER_SCOPE=org
 
 RUNNER_LABELS=self-hosted,cron-runner   # optional, targets the pool
-RUNNER_NAME_PREFIX=cron-runner          # optional; runner name = <prefix>-runner-1
+RUNNER_NAME_PREFIX=cron-runner          # optional; the runner registers under this exact name
 ```
 
 Point your workflow at the pool:
@@ -133,7 +146,7 @@ Everything else is available to jobs through standard `setup-*` actions (they do
 
 The reset is the state-hygiene story: the container is recreated from the image on a fixed cadence, so nothing a job wrote (work dir, package caches, installed files) survives into the next cycle — while the registration persists under the same name, so there's exactly one runner in GitHub and no add/remove churn.
 
-Runners are named `<RUNNER_NAME_PREFIX>-<hostname>` (e.g. `cron-runner-runner-1`), so they're easy to recognize in **Settings → Actions → Runners**. If a container dies without a clean exit (SIGKILL, host reboot), the next boot sweeps offline leftovers with the same prefix; the recreated container then re-registers with `--replace`.
+The runner registers as `RUNNER_NAME_PREFIX` (default `cron-runner`), so it.s easy to recognize in **Settings → Actions → Runners**. If a container dies without a clean exit (SIGKILL, host reboot), the next boot sweeps offline leftovers with the same prefix; the recreated container then re-registers with `--replace`.
 
 ## Security posture
 

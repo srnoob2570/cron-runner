@@ -1,0 +1,30 @@
+# Scheduler only — cron dispatcher for GitHub Actions workflows.
+# Use this when the runner lives elsewhere (e.g. this file on a PaaS/Dokploy,
+# docker-compose.runner.yml on a Docker host):
+#   docker compose -f docker-compose.scheduler.yml up -d
+#
+# Schedules come from the CRONTAB env var (pipe-separated entries). If you
+# prefer a file (local compose), uncomment the crontab mount below and run
+# `cp crontab.example crontab`.
+name: cron-runner-scheduler
+
+services:
+  scheduler:
+    image: alpine:3.22
+    restart: always
+    environment:
+      GH_TOKEN: ${GH_TOKEN}
+      # Pipe-separated cron entries, e.g.:
+      #   CRONTAB: '*/10 * * * * /scheduler/dispatch.sh workflow owner/repo wf.yml main'
+      CRONTAB: ${CRONTAB:-}
+    volumes:
+      - ./scheduler:/scheduler:ro
+      # - ./crontab:/etc/crontabs/root:ro
+    command: ["/bin/sh", "/scheduler/entrypoint.sh"]
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,nosuid,size=16m

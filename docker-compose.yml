@@ -25,13 +25,15 @@ services:
       args:
         BUN_VERSION: ${BUN_VERSION:-none}
         NODE_VERSION: ${NODE_VERSION:-none}
-    image: cron-runner-runner:latest
+    image: cron-runner:latest
     restart: always
     env_file: .env
     environment:
+      # The runner registers under this name (default cron-runner). A
+      # recreated container re-registers with --replace under the same name.
       RUNNER_NAME_PREFIX: ${RUNNER_NAME_PREFIX:-cron-runner}
+      # Seconds before a clean self-reset (0 = never reset).
       RUNNER_MAX_LIFETIME: ${RUNNER_MAX_LIFETIME:-86400}
-    hostname: runner-1
     cap_drop: ["ALL"]
     security_opt:
       - no-new-privileges:true
