@@ -1,45 +1,13 @@
+# Both halves on one host. Each service is defined once in its own compose
+# file (also used for split deploys); this file just includes them and adds
+# the crontab mount for the file-based schedule path.
 name: cron-runner
+
+include:
+  - docker-compose.scheduler.yml
+  - docker-compose.runner.yml
 
 services:
   scheduler:
-    image: alpine:3.22
-    restart: always
-    environment:
-      GH_TOKEN: ${GH_TOKEN}
-      CRONTAB: ${CRONTAB:-}
     volumes:
-      - ./scheduler:/scheduler:ro
       - ./crontab:/etc/crontabs/root:ro
-    command: ["/bin/sh", "/scheduler/entrypoint.sh"]
-    cap_drop: ["ALL"]
-    security_opt:
-      - no-new-privileges:true
-    mem_limit: 128m
-    pids_limit: 64
-    tmpfs:
-      - /tmp:rw,nosuid,size=16m
-
-  runner:
-    build:
-      context: .
-      args:
-        BUN_VERSION: ${BUN_VERSION:-none}
-        NODE_VERSION: ${NODE_VERSION:-none}
-    image: cron-runner:latest
-    restart: always
-    env_file: .env
-    environment:
-      RUNNER_NAME_PREFIX: ${RUNNER_NAME_PREFIX:-cron-runner}
-      RUNNER_MAX_LIFETIME: ${RUNNER_MAX_LIFETIME:-86400}
-    cap_drop: ["ALL"]
-    security_opt:
-      - no-new-privileges:true
-    mem_limit: 2g
-    pids_limit: 384
-    ulimits:
-      nofile:
-        soft: 4096
-        hard: 8192
-    tmpfs:
-      - /tmp:rw,nosuid,size=1g
-      - /run:rw,nosuid,size=64m

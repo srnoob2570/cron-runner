@@ -85,10 +85,10 @@ Standard cron syntax plus dispatch fields — no shell, just workflow triggers:
 # │ │ │ ┌───────────── month (1-12)
 # │ │ │ │ ┌───────────── day of week (0-6, Sunday=0)
 # │ │ │ │ │
-* * * * *  /scheduler/dispatch.sh  TYPE  OWNER/REPO  WORKFLOW  REF
+* * * * *  /scheduler/dispatch.sh  OWNER/REPO  WORKFLOW  REF
 
-*/10 * * * *  /scheduler/dispatch.sh  workflow  owner/repo  update.yml   main
-0 3 * * *     /scheduler/dispatch.sh  workflow  owner/repo  nightly.yml  develop
+*/10 * * * *  /scheduler/dispatch.sh  owner/repo  update.yml   main
+0 3 * * *     /scheduler/dispatch.sh  owner/repo  nightly.yml  develop
 ```
 
 Every tick POSTs to `POST /repos/{owner}/{repo}/actions/workflows/{workflow}/dispatches` and logs the result (`204` = dispatched). A failed dispatch (network blip, rate limit) is logged and simply retried on the next tick.
@@ -98,7 +98,7 @@ Two ways to provide it — first match wins:
 - **`CRONTAB` env var** (PaaS/Dokploy path): pipe-separated entries. Pipes are illegal in cron fields, so the split is unambiguous.
 
   ```ini
-  CRONTAB=*/10 * * * * /scheduler/dispatch.sh workflow owner/repo update.yml main|0 3 * * * /scheduler/dispatch.sh workflow owner/repo nightly.yml develop
+  CRONTAB=*/10 * * * * /scheduler/dispatch.sh owner/repo update.yml main|0 3 * * * /scheduler/dispatch.sh owner/repo nightly.yml develop
   ```
 
 - **`crontab` file** (docker compose path): `cp crontab.example crontab`, edit (gitignored), mounted read-only at `/etc/crontabs/root`.
@@ -146,7 +146,7 @@ Everything else is available to jobs through standard `setup-*` actions (they do
 
 The reset is the state-hygiene story: the container is recreated from the image on a fixed cadence, so nothing a job wrote (work dir, package caches, installed files) survives into the next cycle — while the registration persists under the same name, so there's exactly one runner in GitHub and no add/remove churn.
 
-The runner registers as `RUNNER_NAME_PREFIX` (default `cron-runner`), so it.s easy to recognize in **Settings → Actions → Runners**. If a container dies without a clean exit (SIGKILL, host reboot), the next boot sweeps offline leftovers with the same prefix; the recreated container then re-registers with `--replace`.
+The runner registers as `RUNNER_NAME_PREFIX` (default `cron-runner`), so it's easy to recognize in **Settings → Actions → Runners**. If a container dies without a clean exit (SIGKILL, host reboot), the next boot sweeps offline leftovers with the same prefix; the recreated container then re-registers with `--replace`.
 
 ## Security posture
 

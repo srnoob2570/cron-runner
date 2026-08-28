@@ -1,29 +1,23 @@
 #!/bin/sh
-# Dispatch one GitHub Actions workflow: dispatch.sh TYPE OWNER/REPO WORKFLOW REF
+# Dispatch one GitHub Actions workflow: dispatch.sh OWNER/REPO WORKFLOW REF
 set -eu
 
-TYPE="${1:-workflow}"
-REPO="${2:?missing repo argument}"
-WORKFLOW="${3:?missing workflow argument}"
-REF="${4:-main}"
+REPO="${1:?missing repo argument}"
+WORKFLOW="${2:?missing workflow argument}"
+REF="${3:-main}"
 
 OWNER="${REPO%%/*}"
 NAME="${REPO#*/}"
-
-case "$TYPE" in
-    workflow) endpoint="actions/workflows/${WORKFLOW}/dispatches" ;;
-    *) echo "FATAL: unsupported dispatch type '${TYPE}'" >&2; exit 1 ;;
-esac
 
 http_code="$(curl -sS -o /tmp/dispatch.out -w '%{http_code}' --max-time 30 \
     -X POST \
     -H "Authorization: Bearer ${GH_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/repos/${OWNER}/${NAME}/${endpoint}" \
+    "https://api.github.com/repos/${OWNER}/${NAME}/actions/workflows/${WORKFLOW}/dispatches" \
     -d "{\"ref\":\"${REF}\"}" || echo 000)"
 
 case "$http_code" in
-    204) echo "$(date -u +%FT%TZ) dispatch OK ${TYPE} ${REPO}/${WORKFLOW}@${REF} (204)" ;;
-    *)   echo "$(date -u +%FT%TZ) dispatch FAILED ${TYPE} ${REPO}/${WORKFLOW}@${REF} http=${http_code} (retries next cron tick)" ;;
+    204) echo "$(date -u +%FT%TZ) dispatch OK ${REPO}/${WORKFLOW}@${REF} (204)" ;;
+    *)   echo "$(date -u +%FT%TZ) dispatch FAILED ${REPO}/${WORKFLOW}@${REF} http=${http_code} (retries next cron tick)" ;;
 esac

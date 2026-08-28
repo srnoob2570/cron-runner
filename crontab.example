@@ -1,8 +1,8 @@
 # cron-runner scheduler crontab.
 #
-#   m h dom mon dow  /scheduler/dispatch.sh  TYPE  OWNER/REPO  WORKFLOW  REF
+#   m h dom mon dow  /scheduler/dispatch.sh  OWNER/REPO  WORKFLOW  REF
 #
-#   */10 * * * *  /scheduler/dispatch.sh  workflow  owner/repo  update.yml   main
-#   0 3 * * *     /scheduler/dispatch.sh  workflow  owner/repo  nightly.yml  develop
+#   */10 * * * *  /scheduler/dispatch.sh  owner/repo  update.yml   main
+#   0 3 * * *     /scheduler/dispatch.sh  owner/repo  nightly.yml  develop
 #
-*/10 * * * * /scheduler/dispatch.sh workflow owner/repo update.yml main
+*/10 * * * * /scheduler/dispatch.sh owner/repo update.yml main
