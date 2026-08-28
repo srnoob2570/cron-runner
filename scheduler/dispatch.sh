@@ -1,11 +1,5 @@
 #!/bin/sh
-# cron-runner dispatcher: trigger one GitHub Actions workflow via the REST API.
-#
-# Usage (invoked by crond with fields from the crontab file):
-#   dispatch.sh TYPE OWNER/REPO WORKFLOW REF
-#
-# Auth: GH_TOKEN from the environment (.env via compose). No gh CLI in this
-# image on purpose (minimal surface).
+# Dispatch one GitHub Actions workflow: dispatch.sh TYPE OWNER/REPO WORKFLOW REF
 set -eu
 
 TYPE="${1:-workflow}"

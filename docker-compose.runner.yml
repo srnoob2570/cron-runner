@@ -1,34 +1,19 @@
-# Runner only — dedicated GitHub Actions runner in a hardened container.
-# Use this when the scheduler lives elsewhere (e.g. docker-compose.scheduler.yml
-# on a PaaS/Dokploy, this file on a Docker host):
-#   docker compose -f docker-compose.runner.yml up -d --build
-#
-# Requires the same .env as the full stack (cp .env.example .env).
+# Runner only — pair with docker-compose.scheduler.yml (e.g. on a PaaS).
 name: cron-runner-runner
 
 services:
-  # Dedicated runner. Registers once and stays registered; restarts reuse the
-  # on-disk registration (zero API calls). Every RUNNER_MAX_LIFETIME (default
-  # 24h) the container is stopped while idle and `restart: always` recreates
-  # it from the image: non-persisted state (work dir, caches, job-installed
-  # files) is wiped, the registration is re-established with --replace.
   runner:
     build:
       context: .
       args:
-        # Opt-in toolchains via .env (e.g. BUN_VERSION=1.4.0, NODE_VERSION=22)
         BUN_VERSION: ${BUN_VERSION:-none}
         NODE_VERSION: ${NODE_VERSION:-none}
     image: cron-runner:latest
     restart: always
     env_file: .env
     environment:
-      # The runner registers under this name (default cron-runner). A
-      # recreated container re-registers with --replace under the same name.
       RUNNER_NAME_PREFIX: ${RUNNER_NAME_PREFIX:-cron-runner}
-      # Seconds before a clean self-reset (0 = never reset).
       RUNNER_MAX_LIFETIME: ${RUNNER_MAX_LIFETIME:-86400}
-    # Hardening: no docker socket, no privileged, no host paths, minimal caps.
     cap_drop: ["ALL"]
     security_opt:
       - no-new-privileges:true
@@ -41,4 +26,3 @@ services:
     tmpfs:
       - /tmp:rw,nosuid,size=1g
       - /run:rw,nosuid,size=64m
-    # No ports, no volumes, no socket. Outbound egress only.

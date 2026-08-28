@@ -1,32 +1,25 @@
-# cron-runner runner image — a GitHub Actions runner with NO Docker inside,
-# NO docker socket, NO host volumes, NO privileged mode.
-# Jobs run directly in this container (shell + JS actions).
+# cron-runner runner image — GitHub Actions runner with NO docker binaries,
+# no socket, no host volumes, no privileged mode.
 ARG RUNNER_VERSION=2.337.0
 FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}
 
-# ----- Optional toolchains (enable at build time) ---------------------------
-#   docker build --build-arg BUN_VERSION=1.4.0 --build-arg NODE_VERSION=22 .
-# Baked-in toolchains make the matching setup-* actions a cache hit and keep
-# jobs fully offline-friendly for those runtimes.
+# Optional toolchains: --build-arg BUN_VERSION=1.4.0 --build-arg NODE_VERSION=22
 ARG BUN_VERSION=none
 ARG NODE_VERSION=none
 
 USER root
 
-# git (checkout/commit/push steps), curl+unzip (toolchain installs), jq (token mint).
-# NOTE: deliberately NOT installing docker CLI/daemon or gh — the runner has no
-# docker identity and no GitHub identity beyond its short-lived registration token.
+# Deliberately no docker CLI/daemon and no gh.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git curl unzip jq ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Strip ALL docker binaries shipped by the official image (CLI, daemon, helpers,
-# buildx plugin): nothing in this container may talk to any docker daemon.
+# Strip the docker binaries shipped by the official image.
 RUN rm -f /usr/bin/docker /usr/bin/dockerd /usr/bin/docker-init /usr/bin/docker-proxy \
         /usr/local/lib/docker/cli-plugins/docker-buildx \
     && rmdir --ignore-fail-on-non-empty /usr/local/lib/docker/cli-plugins /usr/local/lib/docker 2>/dev/null || true
 
-# Optional: Bun (pinned)
+# Optional: Bun
 RUN set -eux; \
     if [ "${BUN_VERSION}" != "none" ]; then \
         arch="$(dpkg --print-architecture)"; \
@@ -38,7 +31,7 @@ RUN set -eux; \
         rm -rf /tmp/bun /tmp/bun.zip; \
     fi
 
-# Optional: Node.js (pinned, official tarballs)
+# Optional: Node.js
 RUN set -eux; \
     if [ "${NODE_VERSION}" != "none" ]; then \
         arch="$(dpkg --print-architecture)"; \
@@ -55,7 +48,7 @@ RUN set -eux; \
 
 COPY --chmod=0755 runner/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-# Sanity gates baked into the image: fail the build if docker or gh sneak in.
+# Fail the build if docker or gh sneak back in.
 RUN ! command -v docker >/dev/null 2>&1 \
     && ! command -v dockerd >/dev/null 2>&1 \
     && ! command -v gh >/dev/null 2>&1 \

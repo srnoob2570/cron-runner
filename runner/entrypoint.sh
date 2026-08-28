@@ -1,25 +1,10 @@
 #!/usr/bin/env bash
 # cron-runner — dedicated GitHub Actions runner entrypoint.
-#
-# Registration model: the runner registers ONCE and stays registered.
-#   - First boot or container recreation from image: mint a registration
-#     token and register (persistent, NOT ephemeral) with --replace, so the
-#     name is reclaimed and GitHub keeps a single runner entry.
-#   - Plain restarts reuse the on-disk registration: zero API calls, the
-#     runner is online again in seconds.
-#   - Shutdown NEVER deregisters; registration survives restarts.
-#
-# State reset (the security story): RUNNER_MAX_LIFETIME (seconds, default
-# 24h, 0 = disabled) stops the listener once the lifetime expires AND the
-# runner is idle. The container exits and `restart: always` recreates it
-# from the image — wiping everything not persisted (work dir, caches,
-# anything a job installed) — while keeping the registration (fresh
-# --replace registration under the same name).
-#
-# Secret hygiene:
-#   - GH_TOKEN is required only to (re-)register. It is unset before the
-#     listener starts; a non-exported copy is kept for the registration API
-#     calls only (shell vars are not inherited by job processes).
+# Registers once (persistent, NOT ephemeral, --replace) and never deregisters
+# on shutdown; restarts reuse the on-disk registration with zero API calls.
+# RUNNER_MAX_LIFETIME (seconds, default 24h, 0 = off) stops the listener while
+# idle so `restart: always` recreates the container from the image, wiping
+# non-persisted state while keeping the registration.
 set -uo pipefail
 
 API="https://api.github.com"
@@ -39,14 +24,12 @@ case "${SCOPE}" in
     *) echo "[entrypoint] FATAL: RUNNER_SCOPE must be 'repo' or 'org'" >&2; exit 1 ;;
 esac
 
-# Recognizable runner name: the prefix itself (e.g. cron-runner), stable
-# across container recreations (--replace reclaims it). Set RUNNER_NAME to
-# override entirely; set a distinct RUNNER_NAME_PREFIX per pool if you run
-# several on the same host.
+# Runner name = the prefix itself, stable across recreations (--replace
+# reclaims it). Override with RUNNER_NAME; use distinct prefixes per pool.
 RUNNER_NAME_PREFIX="${RUNNER_NAME_PREFIX:-cron-runner}"
 RUNNER_NAME="${RUNNER_NAME:-${RUNNER_NAME_PREFIX}}"
 
-GH_TOKEN_LOCAL="${GH_TOKEN:-}"   # non-exported: visible to api()/mint_token only
+GH_TOKEN_LOCAL="${GH_TOKEN:-}"   # non-exported: jobs never see the PAT
 unset GH_TOKEN GH_REPO GH_ORG
 export RUNNER_NAME
 
@@ -85,7 +68,7 @@ sweep() { # sweep zombies — delete offline leftover runners with our prefix
     done
 }
 
-# ── Registration (only when needed) ─────────────────────────────────────────
+# Registration: only when no on-disk config exists.
 if [ -f .runner ]; then
     echo "[entrypoint] reusing existing registration for ${RUNNER_NAME} (no API calls)"
 else
@@ -116,7 +99,7 @@ else
     echo "[entrypoint] registered as ${RUNNER_NAME} (dedicated)"
 fi
 
-# ── Run + lifetime watchdog ─────────────────────────────────────────────────
+# Run + lifetime watchdog.
 LIFETIME="${RUNNER_MAX_LIFETIME:-86400}"
 
 echo "[entrypoint] starting Runner.Listener as ${RUNNER_NAME} (PID $$)"
@@ -124,8 +107,8 @@ echo "[entrypoint] starting Runner.Listener as ${RUNNER_NAME} (PID $$)"
 RUNNER_PID=$!
 trap 'kill -TERM "${RUNNER_PID}" 2>/dev/null || true' TERM INT
 
-# idle check: Runner.Worker exists only while a job is running (comm is
-# truncated to 15 chars, so the exact name match still works).
+# idle check: Runner.Worker exists only while a job runs (comm truncated
+# to 15 chars, so the exact name match still works).
 idle() {
     local d
     for d in /proc/[0-9]*/comm; do
