@@ -1,5 +1,5 @@
 #!/bin/sh
-# cronrunner dispatcher: trigger one GitHub Actions workflow via the REST API.
+# cron-runner dispatcher: trigger one GitHub Actions workflow via the REST API.
 #
 # Usage (invoked by crond with fields from the crontab file):
 #   dispatch.sh TYPE OWNER/REPO WORKFLOW REF

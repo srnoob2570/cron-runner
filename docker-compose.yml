@@ -1,23 +1,14 @@
-name: cronrunner
+name: cron-runner
 
 services:
-  # Cron dispatcher: triggers your workflows via the GitHub REST API on a real
-  # cron schedule. GitHub's native `schedule:` trigger is best-effort and
-  # silently drops runs under load; this one doesn't.
   scheduler:
     image: alpine:3.22
     restart: always
     environment:
       GH_TOKEN: ${GH_TOKEN}
-      # Pipe-separated cron entries, e.g.:
-      #   CRONTAB: '*/10 * * * * /scheduler/dispatch.sh workflow owner/repo wf.yml main'
-      # Takes precedence over the crontab file — this is how PaaS/Dokploy
-      # deployments configure schedules (no bind mounts needed).
       CRONTAB: ${CRONTAB:-}
     volumes:
       - ./scheduler:/scheduler:ro
-      # Local-compose path: schedule in a file (gitignored). Optional —
-      # if absent, set the CRONTAB env var instead.
       - ./crontab:/etc/crontabs/root:ro
     command: ["/bin/sh", "/scheduler/entrypoint.sh"]
     cap_drop: ["ALL"]
@@ -28,29 +19,19 @@ services:
     tmpfs:
       - /tmp:rw,nosuid,size=16m
 
-  # Dedicated runner. Registers once and stays registered; restarts reuse the
-  # on-disk registration (zero API calls). Every RUNNER_MAX_LIFETIME (default
-  # 24h) the container is stopped while idle and `restart: always` recreates
-  # it from the image: non-persisted state (work dir, caches, job-installed
-  # files) is wiped, the registration is re-established with --replace.
   runner:
     build:
       context: .
       args:
-        # Opt-in toolchains via .env (e.g. BUN_VERSION=1.4.0, NODE_VERSION=22)
         BUN_VERSION: ${BUN_VERSION:-none}
         NODE_VERSION: ${NODE_VERSION:-none}
-    image: cronrunner-runner:latest
+    image: cron-runner-runner:latest
     restart: always
     env_file: .env
     environment:
-      # Stable hostname -> stable runner name (e.g. cronrunner-runner-1),
-      # so a recreated container re-registers under the same name (--replace).
-      RUNNER_NAME_PREFIX: ${RUNNER_NAME_PREFIX:-cronrunner}
-      # Seconds before a clean self-reset (0 = never reset).
+      RUNNER_NAME_PREFIX: ${RUNNER_NAME_PREFIX:-cron-runner}
       RUNNER_MAX_LIFETIME: ${RUNNER_MAX_LIFETIME:-86400}
     hostname: runner-1
-    # Hardening: no docker socket, no privileged, no host paths, minimal caps.
     cap_drop: ["ALL"]
     security_opt:
       - no-new-privileges:true
@@ -63,4 +44,3 @@ services:
     tmpfs:
       - /tmp:rw,nosuid,size=1g
       - /run:rw,nosuid,size=64m
-    # No ports, no volumes, no socket. Outbound egress only.

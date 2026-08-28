@@ -1,4 +1,4 @@
-# cronrunner scheduler crontab — real crond syntax. Each line runs the bundled
+# cron-runner scheduler crontab — real crond syntax. Each line runs the bundled
 # dispatcher, which triggers one GitHub Actions workflow via the REST API.
 #
 #   m h dom mon dow  /scheduler/dispatch.sh  TYPE  OWNER/REPO  WORKFLOW  REF

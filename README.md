@@ -1,23 +1,23 @@
-# cronrunner
+# cron-runner
 
 **Reliable cron triggers for GitHub Actions + ephemeral, Docker-less self-hosted runners — in one `docker compose up`.**
 
 GitHub's native `schedule:` trigger is best-effort: during periods of high load, scheduled runs are [silently dropped](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule), sometimes for hours, with no error and no signal. If your workflow matters (catalog rebuilds, backups, keep-alives, feeds), you need a dispatcher that actually fires.
 
-cronrunner is a tiny self-hosted stack:
+cron-runner is a tiny self-hosted stack:
 
 1. **scheduler** — a real cron daemon (Alpine + `crond`) that triggers any workflow via the GitHub REST API on a schedule you control. A dropped tick is impossible: if the container is up, cron fires.
 2. **runner** — a pool of **ephemeral GitHub Actions runners** in hardened containers. No Docker inside, no Docker socket, no host volumes, no `--privileged`. One job per container; the container dies after the job and a fresh one takes its place.
 
 ## Why this design
 
-|            | Native `schedule:`                           | cronrunner scheduler                           |
+|            | Native `schedule:`                           | cron-runner scheduler                           |
 | ---------- | -------------------------------------------- | ---------------------------------------------- |
 | Delivery   | best-effort, **silently dropped under load** | cron in your container: fires or logs an error |
 | Delay      | can be delayed minutes–hours                 | cron precision                                 |
 | Visibility | nothing (no logs, no errors)                 | every dispatch logged with HTTP status         |
 
-|                       | Typical self-hosted runner       | cronrunner runner                                                                              |
+|                       | Typical self-hosted runner       | cron-runner runner                                                                              |
 | --------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Docker socket mounted | often (root-equivalent leak)     | **never** — docker binaries are deleted from the image                                         |
 | Job isolation         | jobs share a persistent runner   | **one job per container**, then the container is destroyed                                     |
@@ -29,7 +29,7 @@ cronrunner is a tiny self-hosted stack:
 ## Quick start
 
 ```bash
-git clone https://github.com/srnoob2570/cronrunner && cd cronrunner
+git clone https://github.com/srnoob2570/cron-runner && cd cron-runner
 cp .env.example .env       # add your PAT
 cp crontab.example crontab # edit your schedule (gitignored)
 docker compose up -d --build
@@ -48,17 +48,17 @@ RUNNER_SCOPE=repo       # or org
 GH_REPO=owner/repo      # where runners register and workflows live
 # GH_ORG=your-org       # when RUNNER_SCOPE=org
 
-RUNNER_LABELS=self-hosted,cronrunner   # optional, targets the pool
-RUNNER_NAME_PREFIX=cronrunner          # optional; runner name = <prefix>-runner-1
+RUNNER_LABELS=self-hosted,cron-runner   # optional, targets the pool
+RUNNER_NAME_PREFIX=cron-runner          # optional; runner name = <prefix>-runner-1
 ```
 
 Point your workflow at the pool:
 
 ```yaml
-on: workflow_dispatch # cronrunner triggers this
+on: workflow_dispatch # cron-runner triggers this
 jobs:
     update:
-        runs-on: [self-hosted, cronrunner]
+        runs-on: [self-hosted, cron-runner]
 ```
 
 ### 2. Schedule
@@ -133,11 +133,11 @@ Everything else is available to jobs through standard `setup-*` actions (they do
 
 The reset is the state-hygiene story: the container is recreated from the image on a fixed cadence, so nothing a job wrote (work dir, package caches, installed files) survives into the next cycle — while the registration persists under the same name, so there's exactly one runner in GitHub and no add/remove churn.
 
-Runners are named `<RUNNER_NAME_PREFIX>-<hostname>` (e.g. `cronrunner-runner-1`), so they're easy to recognize in **Settings → Actions → Runners**. If a container dies without a clean exit (SIGKILL, host reboot), the next boot sweeps offline leftovers with the same prefix; the recreated container then re-registers with `--replace`.
+Runners are named `<RUNNER_NAME_PREFIX>-<hostname>` (e.g. `cron-runner-runner-1`), so they're easy to recognize in **Settings → Actions → Runners**. If a container dies without a clean exit (SIGKILL, host reboot), the next boot sweeps offline leftovers with the same prefix; the recreated container then re-registers with `--replace`.
 
 ## Security posture
 
-- **No Docker anywhere.** The official runner image ships a Docker CLI (and daemon binaries); cronrunner deletes all of them at build time and fails the build if any reappear. A job has no daemon to talk to.
+- **No Docker anywhere.** The official runner image ships a Docker CLI (and daemon binaries); cron-runner deletes all of them at build time and fails the build if any reappear. A job has no daemon to talk to.
 - **No host access.** No sockets, no bind mounts, no host network, no ports, no privileged mode. Kernel attack surface is the container runtime itself — same as any container.
 - **Minimal capabilities.** `cap_drop: ALL` + `no-new-privileges` on both services.
 - **Bounded resources.** 2 GB RAM / 384 PIDs per runner, tmpfs scratch space, read-only config mounts.
@@ -145,7 +145,7 @@ Runners are named `<RUNNER_NAME_PREFIX>-<hostname>` (e.g. `cronrunner-runner-1`)
 - **No long-lived secrets in jobs.** `GH_TOKEN` is used only to (re-)register and is `unset` before the runner starts. Jobs authenticate with the ephemeral `GITHUB_TOKEN` GitHub injects per run. The on-disk runner registration (`.credentials`) can only manage the runner itself — it grants no repo or secrets access.
 - **Scheduler is equally sandboxed** and needs nothing but outbound HTTPS to `api.github.com`.
 
-For public repositories with untrusted PRs, apply [GitHub's self-hosted runner guidance](https://docs.github.com/en/actions/reference/security/secure-use) — prefer running cronrunner against private or trusted repos, or isolate untrusted workloads elsewhere.
+For public repositories with untrusted PRs, apply [GitHub's self-hosted runner guidance](https://docs.github.com/en/actions/reference/security/secure-use) — prefer running cron-runner against private or trusted repos, or isolate untrusted workloads elsewhere.
 
 ## Requirements
 
@@ -163,9 +163,9 @@ For public repositories with untrusted PRs, apply [GitHub's self-hosted runner g
 
 **Why not just `schedule:`?** Because GitHub drops it, [by design](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule), under load, without any error or log. Ask anyone who runs a every-5-minutes workflow.
 
-**Why not a runner on the host with crontab?** Same dispatch reliability, but the runner typically ends up with a Docker socket, root-ish privileges and no state hygiene. cronrunner's runner is a hardened container that resets itself from the image on a fixed cadence.
+**Why not a runner on the host with crontab?** Same dispatch reliability, but the runner typically ends up with a Docker socket, root-ish privileges and no state hygiene. cron-runner's runner is a hardened container that resets itself from the image on a fixed cadence.
 
-**Can I dispatch to other people's repos?** The scheduler dispatches with the PAT's identity — any repo that PAT can access, so one cronrunner can serve multiple repos: just add lines to the crontab.
+**Can I dispatch to other people's repos?** The scheduler dispatches with the PAT's identity — any repo that PAT can access, so one cron-runner can serve multiple repos: just add lines to the crontab.
 
 ## License
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# cronrunner scheduler bootstrap.
+# cron-runner scheduler bootstrap.
 #
 # Schedules come from (first match wins):
 #   1. $CRONTAB env var — pipe-separated entries, e.g.

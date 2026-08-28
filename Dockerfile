@@ -1,4 +1,4 @@
-# cronrunner runner image — a GitHub Actions runner with NO Docker inside,
+# cron-runner runner image — a GitHub Actions runner with NO Docker inside,
 # NO docker socket, NO host volumes, NO privileged mode.
 # Jobs run directly in this container (shell + JS actions).
 ARG RUNNER_VERSION=2.337.0

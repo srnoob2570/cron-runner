@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cronrunner — dedicated GitHub Actions runner entrypoint.
+# cron-runner — dedicated GitHub Actions runner entrypoint.
 #
 # Registration model: the runner registers ONCE and stays registered.
 #   - First boot or container recreation from image: mint a registration
@@ -39,9 +39,9 @@ case "${SCOPE}" in
     *) echo "[entrypoint] FATAL: RUNNER_SCOPE must be 'repo' or 'org'" >&2; exit 1 ;;
 esac
 
-# Recognizable runner names: PREFIX-HOSTNAME (e.g. cronrunner-runner-1).
+# Recognizable runner names: PREFIX-HOSTNAME (e.g. cron-runner-runner-1).
 # Set RUNNER_NAME to override entirely.
-RUNNER_NAME_PREFIX="${RUNNER_NAME_PREFIX:-cronrunner}"
+RUNNER_NAME_PREFIX="${RUNNER_NAME_PREFIX:-cron-runner}"
 RUNNER_NAME="${RUNNER_NAME:-${RUNNER_NAME_PREFIX}-$(hostname)}"
 
 GH_TOKEN_LOCAL="${GH_TOKEN:-}"   # non-exported: visible to api()/mint_token only
