@@ -37,13 +37,13 @@ docker compose up -d --build
 
 That's it. The scheduler starts dispatching, and the runner registers itself under **Settings → Actions → Runners** in your repo.
 
-> **Running on a PaaS (Dokploy, Coolify, Railway…)?** Split the two services. Deploy **`docker-compose.scheduler.yml`** (or just the `scheduler/` scripts, a plain `alpine`-based image with no build) wherever your PaaS runs, and **`docker-compose.runner.yml`** on a Docker host, local or a VPS. Both read the same `.env`; the scheduler uses the `CRONTAB` env var, so no files are needed on the PaaS side.
+> **Running on a PaaS (Dokploy, Coolify, Railway…)?** Split the two services. Deploy **`docker-compose.scheduler.yml`** wherever your PaaS runs, and **`docker-compose.runner.yml`** on a Docker host, local or a VPS. Both read the same `.env`; the scheduler uses the `CRONTAB` env var, so no config files are needed on the PaaS side.
 
 **Prefer scheduler and runner apart?** Each half ships its own compose file:
 
 ```bash
-# scheduler only (PaaS-friendly, no build)
-docker compose -f docker-compose.scheduler.yml up -d
+# scheduler only (PaaS-friendly)
+docker compose -f docker-compose.scheduler.yml up -d --build
 
 # runner only (Docker host)
 docker compose -f docker-compose.runner.yml up -d --build
@@ -178,7 +178,9 @@ For public repositories with untrusted PRs, apply [GitHub's self-hosted runner g
 
 **Why not a runner on the host with crontab?** Same dispatch reliability, but that runner typically ends up with a Docker socket, root-ish privileges and no state hygiene. cron-runner's runner is a hardened container that resets itself from the image on a fixed cadence.
 
-**Why supercronic and not busybox `crond`?** busybox `crond` starts jobs with `vfork()` and then runs libc calls (`setuid`/`setgroups`) before `execve` — which on musl (Alpine) can deadlock permanently: the daemon freezes in silence, no crash, no log, container still `Up`. It's a probabilistic race; we hit it in production, on the first cron tick after a redeploy. supercronic is a static Go binary that spawns jobs with `clone`+`execve` and runs no libc code in the vfork window, so that bug class cannot happen. It also logs every job run to stdout and shuts down gracefully on SIGTERM. The binary is downloaded at boot, pinned by version + sha256, so the scheduler stays a plain `alpine` image with no build step.
+**Why supercronic and not busybox `crond`?** busybox `crond` starts jobs with `vfork()` and then runs libc calls (`setuid`/`setgroups`) before `execve` — which on musl (Alpine) can deadlock permanently: the daemon freezes in silence, no crash, no log, container still `Up`. It's a probabilistic race; we hit it in production, on the first cron tick after a redeploy. supercronic is a static Go binary that spawns jobs with `clone`+`execve` and runs no libc code in the vfork window, so that bug class cannot happen. It also logs every job run to stdout and shuts down gracefully on SIGTERM. The binary is downloaded at boot, pinned by version + sha256.
+
+**Why are the scheduler scripts baked into the image instead of bind-mounted?** PaaS code syncs (Dokploy's deploy flow) re-clone the repo checkout without recreating containers. Bind mounts of running containers keep pointing at the old (unlinked) directory, so the cron daemon keeps ticking but `dispatch.sh` is gone — every job fails with `not found`, silently. We hit that in production too. Baking the scripts into the image (`scheduler/Dockerfile`, a 3-line alpine build) makes code syncs harmless: a sync that changes code only takes effect on the next real redeploy, when the container is recreated from the new image.
 
 **Can I dispatch to other people's repos?** Yes. The scheduler dispatches with the PAT's identity, so it can reach any repo that PAT can access. One cron-runner can serve multiple repos; just add lines to the crontab.
 
