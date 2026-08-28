@@ -1,0 +1,50 @@
+name: cronrunner
+
+services:
+  # Cron dispatcher: triggers your workflows via the GitHub REST API on a real
+  # cron schedule. GitHub's native `schedule:` trigger is best-effort and
+  # silently drops runs under load; this one doesn't.
+  scheduler:
+    image: alpine:3.22
+    restart: always
+    environment:
+      GH_TOKEN: ${GH_TOKEN}
+    volumes:
+      - ./scheduler:/scheduler:ro
+      - ./crontab:/etc/crontabs/root:ro
+    command: ["/bin/sh", "/scheduler/entrypoint.sh"]
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,nosuid,size=16m
+
+  # Ephemeral runner pool. restart: always = after each job the runner exits
+  # (ephemeral self-deregister) and compose recreates it with a fresh token.
+  # Scale horizontally: docker compose up -d --scale runner=4
+  runner:
+    build:
+      context: .
+      args:
+        # Opt-in toolchains via .env (e.g. BUN_VERSION=1.4.0, NODE_VERSION=22)
+        BUN_VERSION: ${BUN_VERSION:-none}
+        NODE_VERSION: ${NODE_VERSION:-none}
+    image: cronrunner-runner:latest
+    restart: always
+    env_file: .env
+    # Hardening: no docker socket, no privileged, no host paths, minimal caps.
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    pids_limit: 384
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    tmpfs:
+      - /tmp:rw,nosuid,size=1g
+      - /run:rw,nosuid,size=64m
+    # No ports, no volumes, no socket. Outbound egress only.

@@ -1,0 +1,13 @@
+# cronrunner scheduler crontab — real crond syntax. Each line runs the bundled
+# dispatcher, which triggers one GitHub Actions workflow via the REST API.
+#
+#   m h dom mon dow  /scheduler/dispatch.sh  TYPE  OWNER/REPO  WORKFLOW  REF
+#
+# TYPE is `workflow` (a file in .github/workflows/). Example lines:
+#
+#   */10 * * * *  /scheduler/dispatch.sh  workflow  owner/repo  update.yml   main
+#   0 3 * * *     /scheduler/dispatch.sh  workflow  owner/repo  nightly.yml  develop
+#
+# Lines starting with # are ignored. No shell commands — dispatch.sh only
+# triggers GitHub Actions workflows.
+*/10 * * * * /scheduler/dispatch.sh workflow owner/repo update.yml main
