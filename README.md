@@ -1,13 +1,13 @@
 # cron-runner
 
-**Reliable cron triggers for GitHub Actions + ephemeral, Docker-less self-hosted runners — in one `docker compose up`.**
+**Reliable cron triggers for GitHub Actions + dedicated, Docker-less self-hosted runners — in one `docker compose up`.**
 
 GitHub's native `schedule:` trigger is best-effort: during periods of high load, scheduled runs are [silently dropped](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule), sometimes for hours, with no error and no signal. If your workflow matters (catalog rebuilds, backups, keep-alives, feeds), you need a dispatcher that actually fires.
 
 cron-runner is a tiny self-hosted stack:
 
 1. **scheduler** — a real cron daemon (Alpine + `crond`) that triggers any workflow via the GitHub REST API on a schedule you control. A dropped tick is impossible: if the container is up, cron fires.
-2. **runner** — a pool of **ephemeral GitHub Actions runners** in hardened containers. No Docker inside, no Docker socket, no host volumes, no `--privileged`. One job per container; the container dies after the job and a fresh one takes its place.
+2. **runner** — a **dedicated GitHub Actions runner** in a hardened container. No Docker inside, no Docker socket, no host volumes, no `--privileged`. It registers once and stays registered; the container periodically recreates itself from the image to wipe any state a job left behind.
 
 ## Why this design
 
@@ -20,8 +20,8 @@ cron-runner is a tiny self-hosted stack:
 |                       | Typical self-hosted runner       | cron-runner runner                                                                              |
 | --------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Docker socket mounted | often (root-equivalent leak)     | **never** — docker binaries are deleted from the image                                         |
-| Job isolation         | jobs share a persistent runner   | **one job per container**, then the container is destroyed                                     |
-| Credentials           | long-lived runner config on disk | registration token minted at boot, expires in 1h; runner self-deregisters after its single job |
+| State between jobs    | shared, persists silently        | **periodic self-reset** — container recreated from the image, non-persisted state wiped        |
+| Credentials           | long-lived config + often socket | registers once; PAT only touches registration, never job steps                                 |
 | Privileges            | varies                           | `cap_drop: ALL`, `no-new-privileges`, memory/PID limits, tmpfs, no ports, no volumes           |
 
 > **Trade-off:** jobs run directly inside the runner container. `container:`, `services:` and `docker://` actions are not supported — by design. This is what makes the container safe to cap: there is nothing for a job to escape into. Shell steps and JS actions (the vast majority of cron workloads) work as-is.
@@ -174,7 +174,7 @@ For public repositories with untrusted PRs, apply [GitHub's self-hosted runner g
 
 ## FAQ
 
-**Why not just `schedule:`?** Because GitHub drops it, [by design](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule), under load, without any error or log. Ask anyone who runs a every-5-minutes workflow.
+**Why not just `schedule:`?** Because GitHub drops it, [by design](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule), under load, without any error or log. Ask anyone who runs a every-5-minute workflow.
 
 **Why not a runner on the host with crontab?** Same dispatch reliability, but the runner typically ends up with a Docker socket, root-ish privileges and no state hygiene. cron-runner's runner is a hardened container that resets itself from the image on a fixed cadence.
 
