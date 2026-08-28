@@ -1,13 +1,16 @@
 # Both halves on one host. Each service is defined once in its own compose
-# file (also used for split deploys); this file just includes them and adds
-# the crontab mount for the file-based schedule path.
+# file (also used for split deploys); this file only selects the crontab
+# source. Default is the CRONTAB env var (works on PaaS deploys too, where
+# a gitignored file would not exist). For the file-based path, create the
+# file and uncomment the mount:
+#   cp crontab.example crontab
 name: cron-runner
 
 include:
   - docker-compose.scheduler.yml
   - docker-compose.runner.yml
 
-services:
-  scheduler:
-    volumes:
-      - ./crontab:/etc/crontabs/root:ro
+# services:
+#   scheduler:
+#     volumes:
+#       - ./crontab:/etc/crontabs/root:ro
