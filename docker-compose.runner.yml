@@ -10,8 +10,13 @@ services:
         NODE_VERSION: ${NODE_VERSION:-none}
     image: cron-runner:latest
     restart: always
-    env_file: .env
     environment:
+      RUNNER_SCOPE: ${RUNNER_SCOPE:-repo}
+      GH_REPO: ${GH_REPO:-}
+      GH_ORG: ${GH_ORG:-}
+      GH_TOKEN: ${GH_TOKEN:-}
+      RUNNER_LABELS: ${RUNNER_LABELS:-}
+      RUNNER_NAME: ${RUNNER_NAME:-}
       RUNNER_NAME_PREFIX: ${RUNNER_NAME_PREFIX:-cron-runner}
       RUNNER_MAX_LIFETIME: ${RUNNER_MAX_LIFETIME:-86400}
     cap_drop: ["ALL"]
