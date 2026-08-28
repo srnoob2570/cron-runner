@@ -6,7 +6,7 @@ GitHub's native `schedule:` trigger is best-effort. Under load, GitHub [silently
 
 cron-runner is a tiny self-hosted stack:
 
-1. **Scheduler.** A real cron daemon (Alpine + `crond`) that triggers workflows through the GitHub REST API on a schedule you control. If the container is up, cron fires.
+1. **Scheduler.** A real cron daemon (supercronic on Alpine) that triggers workflows through the GitHub REST API on a schedule you control. If the container is up, cron fires.
 2. **Runner.** A dedicated GitHub Actions runner in a hardened container. No Docker inside, no Docker socket, no host volumes, no `--privileged`. It registers once and stays registered, and it periodically recreates itself from the image to wipe whatever state jobs left behind.
 
 ## Why this design
@@ -177,6 +177,8 @@ For public repositories with untrusted PRs, apply [GitHub's self-hosted runner g
 **Why not just `schedule:`?** Because GitHub drops it, [by design](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule), under load, without any error or log. Ask anyone who runs a every-5-minute workflow.
 
 **Why not a runner on the host with crontab?** Same dispatch reliability, but that runner typically ends up with a Docker socket, root-ish privileges and no state hygiene. cron-runner's runner is a hardened container that resets itself from the image on a fixed cadence.
+
+**Why supercronic and not busybox `crond`?** busybox `crond` starts jobs with `vfork()` and then runs libc calls (`setuid`/`setgroups`) before `execve` — which on musl (Alpine) can deadlock permanently: the daemon freezes in silence, no crash, no log, container still `Up`. It's a probabilistic race; we hit it in production, on the first cron tick after a redeploy. supercronic is a static Go binary that spawns jobs with `clone`+`execve` and runs no libc code in the vfork window, so that bug class cannot happen. It also logs every job run to stdout and shuts down gracefully on SIGTERM. The binary is downloaded at boot, pinned by version + sha256, so the scheduler stays a plain `alpine` image with no build step.
 
 **Can I dispatch to other people's repos?** Yes. The scheduler dispatches with the PAT's identity, so it can reach any repo that PAT can access. One cron-runner can serve multiple repos; just add lines to the crontab.
 
