@@ -90,13 +90,15 @@ Two ways to provide it — first match wins:
 
 - **`crontab` file** (docker compose path): `cp crontab.example crontab`, edit (gitignored), mounted read-only at `/etc/crontabs/root`.
 
-### 3. Scale the pool (optional)
+### 3. Reset cycle (optional but recommended)
 
-```bash
-docker compose up -d --scale runner=4
+The runner is **dedicated**: it registers once and stays registered — no deregistration, no per-boot API churn, near-zero job pickup latency. To keep state clean, the container **self-resets** every `RUNNER_MAX_LIFETIME` (default 24h, `0` = never):
+
+```ini
+RUNNER_MAX_LIFETIME=86400   # seconds; the reset waits until no job is running
 ```
 
-Each replica registers its own ephemeral runner. With `restart: always`, a replica that finishes a job is recreated with a freshly minted token — the pool is self-healing.
+A reset = the container stops while idle → `restart: always` recreates it from the image → everything not persisted (work dir, caches, anything a job installed) is wiped → it re-registers with `--replace` under the same name. One runner entry in GitHub, fresh state each cycle. A plain `docker compose restart runner` also reuses the on-disk registration with zero API calls.
 
 ## Toolchains (opt-in)
 
@@ -109,31 +111,29 @@ BUN_VERSION=1.4.0 NODE_VERSION=22 docker compose build runner
 
 Everything else is available to jobs through standard `setup-*` actions (they download on demand).
 
-## How the ephemeral cycle works
+## How the dedicated cycle works
 
 ```text
-        ┌──────────────────────────────────────────────────────┐
-        │  container boot                                      │
-        │  1. sweep offline leftover runners (crash zombies)   │
-        │  2. mint registration token (GH_TOKEN, expires 1h)   │
-        │  3. unset GH_TOKEN — never visible to jobs           │
-        │  4. config.sh --ephemeral --disableupdate            │
-        │  5. run.sh → waits for exactly ONE job               │
-        │  6. job runs → runner exits, self-deregisters,       │
-        │     wipes its local config                           │
-        │  7. shutdown cleanup: config.sh remove + API check   │
-        │  8. container dies → restart: always → back to 1     │
-        └──────────────────────────────────────────────────────┘
+        ┌──────────────────────────────────────────────────────────┐
+        │  first boot / recreated container                        │
+        │  1. sweep offline leftover runners (crash zombies)       │
+        │  2. mint registration token (GH_TOKEN, expires 1h)       │
+        │  3. unset GH_TOKEN — never visible to jobs               │
+        │  4. config.sh --disableupdate --replace (NOT ephemeral)  │
+        │  5. run.sh → waits for jobs, forever                     │
+        │                                                          │
+        │  plain restart: skips 1-4 — reuses the on-disk           │
+        │  registration, zero API calls, online in seconds         │
+        │                                                          │
+        │  every RUNNER_MAX_LIFETIME (default 24h):                │
+        │  6. when idle → clean stop → restart: always →           │
+        │     recreate from image (state wiped) → back to 1        │
+        └──────────────────────────────────────────────────────────┘
 ```
 
-Ephemerality is the security model: a compromised runner cannot persist, cannot accept a second job, and holds at most a 1-hour-old single-use token. GitHub auto-deregisters ephemeral runners after one job — and cronrunner **enforces** it: after every container exit, the entrypoint removes the registration (`config.sh remove`) and verifies via the API that no runner remains under its name. If a container dies without a clean exit (SIGKILL, host reboot), the next pool container sweeps offline leftovers with the same prefix at boot.
+The reset is the state-hygiene story: the container is recreated from the image on a fixed cadence, so nothing a job wrote (work dir, package caches, installed files) survives into the next cycle — while the registration persists under the same name, so there's exactly one runner in GitHub and no add/remove churn.
 
-Runners are named `<RUNNER_NAME_PREFIX>-<hostname>` (e.g. `cronrunner-runner-1`), so they're easy to recognize in **Settings → Actions → Runners**. If a runner somehow lingers as _offline_ (never completed a job → no self-deregistration), clean it manually:
-
-```bash
-gh api repos/OWNER/REPO/actions/runners --jq '.runners[] | select(.status=="offline") | .id'
-gh api -X DELETE repos/OWNER/REPO/actions/runners/<id> --silent
-```
+Runners are named `<RUNNER_NAME_PREFIX>-<hostname>` (e.g. `cronrunner-runner-1`), so they're easy to recognize in **Settings → Actions → Runners**. If a container dies without a clean exit (SIGKILL, host reboot), the next boot sweeps offline leftovers with the same prefix; the recreated container then re-registers with `--replace`.
 
 ## Security posture
 
@@ -141,7 +141,8 @@ gh api -X DELETE repos/OWNER/REPO/actions/runners/<id> --silent
 - **No host access.** No sockets, no bind mounts, no host network, no ports, no privileged mode. Kernel attack surface is the container runtime itself — same as any container.
 - **Minimal capabilities.** `cap_drop: ALL` + `no-new-privileges` on both services.
 - **Bounded resources.** 2 GB RAM / 384 PIDs per runner, tmpfs scratch space, read-only config mounts.
-- **No long-lived secrets in jobs.** `GH_TOKEN` exists only in the entrypoint's environment and is `unset` before the runner process starts. Jobs authenticate with the ephemeral `GITHUB_TOKEN` GitHub injects per run.
+- **Periodic state reset.** Every `RUNNER_MAX_LIFETIME` the container is recreated from the image, so job-installed files, work dirs and caches don't accumulate across cycles. `docker compose restart runner` alone does **not** wipe state (it keeps the writable layer) — the reset is a recreate.
+- **No long-lived secrets in jobs.** `GH_TOKEN` is used only to (re-)register and is `unset` before the runner starts. Jobs authenticate with the ephemeral `GITHUB_TOKEN` GitHub injects per run. The on-disk runner registration (`.credentials`) can only manage the runner itself — it grants no repo or secrets access.
 - **Scheduler is equally sandboxed** and needs nothing but outbound HTTPS to `api.github.com`.
 
 For public repositories with untrusted PRs, apply [GitHub's self-hosted runner guidance](https://docs.github.com/en/actions/reference/security/secure-use) — prefer running cronrunner against private or trusted repos, or isolate untrusted workloads elsewhere.
@@ -155,14 +156,14 @@ For public repositories with untrusted PRs, apply [GitHub's self-hosted runner g
 ## Limitations
 
 - No `container:` / `services:` / `docker://` actions (no daemon by design)
-- Runner version updates ship via image rebuild (`RUNNER_VERSION` build arg); `--disableupdate` is set because in-container self-update is useless in ephemeral containers. Rebuild at least monthly — GitHub stops queueing jobs to runners >30 days behind.
+- Runner version updates ship via image rebuild (`RUNNER_VERSION` build arg); `--disableupdate` is set because in-container self-update conflicts with the reset model. Rebuild at least monthly — GitHub stops queueing jobs to runners >30 days behind.
 - The scheduler triggers only `workflow` dispatches (that's the point); it is not a general-purpose cron
 
 ## FAQ
 
 **Why not just `schedule:`?** Because GitHub drops it, [by design](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule), under load, without any error or log. Ask anyone who runs a every-5-minutes workflow.
 
-**Why not a runner on the host with crontab?** Same dispatch reliability, but the runner persists between jobs, holds its registration on disk, and typically ends up with a Docker socket. cronrunner's pool is disposable by construction.
+**Why not a runner on the host with crontab?** Same dispatch reliability, but the runner typically ends up with a Docker socket, root-ish privileges and no state hygiene. cronrunner's runner is a hardened container that resets itself from the image on a fixed cadence.
 
 **Can I dispatch to other people's repos?** The scheduler dispatches with the PAT's identity — any repo that PAT can access, so one cronrunner can serve multiple repos: just add lines to the crontab.
 

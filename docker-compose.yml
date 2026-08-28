@@ -28,9 +28,11 @@ services:
     tmpfs:
       - /tmp:rw,nosuid,size=16m
 
-  # Ephemeral runner pool. restart: always = after each job the runner exits
-  # (ephemeral self-deregister) and compose recreates it with a fresh token.
-  # Scale horizontally: docker compose up -d --scale runner=4
+  # Dedicated runner. Registers once and stays registered; restarts reuse the
+  # on-disk registration (zero API calls). Every RUNNER_MAX_LIFETIME (default
+  # 24h) the container is stopped while idle and `restart: always` recreates
+  # it from the image: non-persisted state (work dir, caches, job-installed
+  # files) is wiped, the registration is re-established with --replace.
   runner:
     build:
       context: .
@@ -43,8 +45,10 @@ services:
     env_file: .env
     environment:
       # Stable hostname -> stable runner name (e.g. cronrunner-runner-1),
-      # so post-shutdown deregistration can be verified by name.
+      # so a recreated container re-registers under the same name (--replace).
       RUNNER_NAME_PREFIX: ${RUNNER_NAME_PREFIX:-cronrunner}
+      # Seconds before a clean self-reset (0 = never reset).
+      RUNNER_MAX_LIFETIME: ${RUNNER_MAX_LIFETIME:-86400}
     hostname: runner-1
     # Hardening: no docker socket, no privileged, no host paths, minimal caps.
     cap_drop: ["ALL"]
