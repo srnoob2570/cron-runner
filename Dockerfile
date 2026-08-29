@@ -1,11 +1,7 @@
-# cron-runner runner image — GitHub Actions runner with NO docker binaries,
+# cron-runner runner image: GitHub Actions runner with NO docker binaries,
 # no socket, no host volumes, no privileged mode.
 ARG RUNNER_VERSION=2.337.0
 FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}
-
-# Optional toolchains: --build-arg BUN_VERSION=1.4.0 --build-arg NODE_VERSION=22
-ARG BUN_VERSION=none
-ARG NODE_VERSION=none
 
 USER root
 
@@ -16,35 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Strip the docker binaries shipped by the official image.
 RUN rm -f /usr/bin/docker /usr/bin/dockerd /usr/bin/docker-init /usr/bin/docker-proxy \
-        /usr/local/lib/docker/cli-plugins/docker-buildx \
+    /usr/local/lib/docker/cli-plugins/docker-buildx \
     && rmdir --ignore-fail-on-non-empty /usr/local/lib/docker/cli-plugins /usr/local/lib/docker 2>/dev/null || true
-
-# Optional: Bun
-RUN set -eux; \
-    if [ "${BUN_VERSION}" != "none" ]; then \
-        arch="$(dpkg --print-architecture)"; \
-        case "$arch" in amd64) target=x64;; arm64) target=aarch64;; *) echo "unsupported arch $arch" >&2; exit 1;; esac; \
-        curl -fsSL -o /tmp/bun.zip "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${target}.zip"; \
-        unzip -q /tmp/bun.zip -d /tmp/bun; \
-        install -m 0755 "/tmp/bun/bun-linux-${target}/bun" /usr/local/bin/bun; \
-        ln -sf bun /usr/local/bin/bunx; \
-        rm -rf /tmp/bun /tmp/bun.zip; \
-    fi
-
-# Optional: Node.js
-RUN set -eux; \
-    if [ "${NODE_VERSION}" != "none" ]; then \
-        arch="$(dpkg --print-architecture)"; \
-        case "$arch" in amd64) narch=x64;; arm64) narch=arm64;; *) echo "unsupported arch $arch" >&2; exit 1;; esac; \
-        curl -fsSL -o /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${narch}.tar.xz"; \
-        mkdir -p /usr/local/lib/nodejs; \
-        tar -xJf /tmp/node.tar.xz -C /usr/local/lib/nodejs --strip-components=1; \
-        ln -sf /usr/local/lib/nodejs/bin/node /usr/local/bin/node; \
-        ln -sf /usr/local/lib/nodejs/bin/npm /usr/local/bin/npm; \
-        ln -sf /usr/local/lib/nodejs/bin/npx /usr/local/bin/npx; \
-        ln -sf /usr/local/lib/nodejs/bin/corepack /usr/local/bin/corepack; \
-        rm -f /tmp/node.tar.xz; \
-    fi
 
 COPY --chmod=0755 runner/entrypoint.sh /usr/local/bin/entrypoint.sh
 

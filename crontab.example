@@ -1,8 +1,16 @@
-# cron-runner scheduler crontab.
+# cron-runner schedule. Standard cron syntax; each job dispatches one
+# workflow: dispatch.sh WORKFLOW [REF]. The repo comes from GH_REPO,
+# the ref defaults to main.
 #
-#   m h dom mon dow  /scheduler/dispatch.sh  OWNER/REPO  WORKFLOW  REF
+# Times are UTC. Edits apply after: docker compose restart scheduler
 #
-#   */10 * * * *  /scheduler/dispatch.sh  owner/repo  update.yml   main
-#   0 3 * * *     /scheduler/dispatch.sh  owner/repo  nightly.yml  develop
-#
-*/10 * * * * /scheduler/dispatch.sh owner/repo update.yml main
+# ┌───────────── minute (0-59)
+# │ ┌───────────── hour (0-23)
+# │ │ ┌───────────── day of month (1-31)
+# │ │ │ ┌───────────── month (1-12)
+# │ │ │ │ ┌───────────── day of week (0-6, Sunday=0)
+# │ │ │ │ │
+# */10 * * * *  /scheduler/dispatch.sh update.yml main
+# 0 3 * * *     /scheduler/dispatch.sh nightly.yml
+
+*/10 * * * * /scheduler/dispatch.sh update.yml main

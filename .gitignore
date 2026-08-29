@@ -1,3 +1,4 @@
 .env
 .env.prod
 crontab
+docs/SIMPLIFICATION.md
