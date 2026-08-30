@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# cron-runner — dockerless GitHub Actions runner, ephemeral per boot.
+# cron-runner: a dockerless GitHub Actions runner, ephemeral per boot.
 #
-# Every container start: mint a registration token, wipe any previous
-# local config, register with --replace (reclaims the same name, so there
-# is exactly one runner entry in GitHub), unset the PAT, exec the
-# listener. One API call per boot is the whole cost. Anything the
-# listener dies of exits the container; restart:always re-runs this
-# script from scratch.
+# Every container start mints a registration token, wipes any previous
+# local config, and registers with --replace. The name is stable, so
+# GitHub keeps exactly one runner entry. The script then unsets the
+# PAT and execs the listener. One API call per boot is the whole cost.
+# If the listener dies, the container exits and restart:always re-runs
+# this script from scratch.
 set -euo pipefail
 
 : "${GH_TOKEN:?GH_TOKEN required}"
 : "${GH_REPO:?GH_REPO required, e.g. owner/repo}"
 RUNNER_NAME="${RUNNER_NAME:-cron-runner}"
 
-# Wipe the previous config first: config.sh refuses to run while .runner
-# exists, and a fresh registration is the whole point of this model.
+# Wipe the previous config first. config.sh refuses to run while .runner
+# exists, and a fresh registration is the point of this setup.
 rm -f .runner .credentials .credentials_rsaparams
 
 TOKEN="$(curl -sSL --max-time 30 -X POST \
@@ -38,7 +38,7 @@ CONFIG_ARGS=(
 
 ./config.sh "${CONFIG_ARGS[@]}"
 
-# The PAT never reaches jobs: unset everything before the listener starts.
+# The PAT never reaches jobs. Unset everything before the listener starts.
 unset TOKEN CONFIG_ARGS GH_TOKEN GH_REPO
 
 echo "[entrypoint] registered as ${RUNNER_NAME}; starting listener"

@@ -1,8 +1,9 @@
 #!/bin/sh
 # Dispatch one GitHub Actions workflow: dispatch.sh WORKFLOW [REF]
-# Repo comes from GH_REPO, auth from GH_TOKEN; both inherited from the
-# service environment. A failed dispatch (network blip, rate limit) is
-# logged with GitHub's response and retried on the next cron tick.
+# Repo comes from GH_REPO, auth from GH_TOKEN; supercronic's job
+# environment provides both. If a dispatch fails (network blip, rate
+# limit), the script logs GitHub's response and the next cron tick
+# retries it.
 set -eu
 
 WORKFLOW="${1:?missing workflow argument, e.g. update.yml}"
@@ -12,7 +13,7 @@ REF="${2:-main}"
 
 case "$WORKFLOW" in
     */*)
-        echo "FATAL: '${WORKFLOW}' looks like a repo — old syntax dispatch.sh OWNER/REPO WORKFLOW REF is gone. Use dispatch.sh WORKFLOW [REF]; the repo comes from GH_REPO." >&2
+        echo "FATAL: '${WORKFLOW}' looks like a repo. Old syntax dispatch.sh OWNER/REPO WORKFLOW REF is gone. Use dispatch.sh WORKFLOW [REF]; the repo comes from GH_REPO." >&2
         exit 1
         ;;
 esac

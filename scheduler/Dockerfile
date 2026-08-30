@@ -9,8 +9,9 @@ RUN apk add --no-cache curl
 RUN rm -f /etc/crontabs/root
 
 # supercronic, pinned by version + sha256 per architecture, verified at
-# build time. Static Go binary: immune to the busybox crond vfork/musl
-# deadlock class, logs every job run, exits cleanly on SIGTERM.
+# build time. It is a static Go binary, immune to the busybox crond
+# vfork/musl deadlock class, and it logs every job run and exits
+# cleanly on SIGTERM.
 ARG SUPERCRONIC_VERSION=v0.2.49
 ARG TARGETARCH
 RUN case "${TARGETARCH}" in \
