@@ -25,11 +25,22 @@ The scheduler starts dispatching on the next tick, and the runner shows up under
 ### `.env`
 
 ```ini
-GH_TOKEN=ghp_xxx        # classic: repo; fine-grained: Administration:RW + Actions:RW
+GH_TOKEN=ghp_xxx        # PAT for both containers, see below
 GH_REPO=owner/repo      # workflows dispatched here, runner registers here
 # RUNNER_NAME=cron-runner
 # RUNNER_LABELS=self-hosted,cron-runner
 ```
+
+### `GH_TOKEN`
+
+One token serves both containers. Create it under Settings → Developer settings → Personal access tokens. The prefix tells you which kind you made: `ghp_` is classic, `github_pat_` is fine-grained.
+
+- **Classic.** Check the `repo` scope and nothing else. That one scope covers both calls this stack makes, but it grants read/write on every repo your user can reach.
+- **Fine-grained.** Repository access: only the repo in `GH_REPO`. Under Permissions, set `Actions` and `Administration` to **Read and write** each. `Metadata: read` is added automatically; nothing else, `Contents` included, gets used.
+
+The two permissions map to the two calls: `Actions: write` dispatches your workflows, `Administration: write` mints the registration token the runner uses at every boot. Registration also requires the token's user to be an admin on the repo. Fine-grained is the smaller grant; whichever you pick, a read-only token will fail.
+
+Fine-grained tokens expire, at most a year out. After expiry the scheduler logs `dispatch FAILED ... http=401` and the runner dies on every boot trying to mint its token. Mint a fresh one and `docker compose restart`.
 
 ### `crontab`
 
