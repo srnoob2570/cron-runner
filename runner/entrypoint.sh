@@ -21,8 +21,8 @@ TOKEN="$(curl -sSL --max-time 30 -X POST \
     -H "Authorization: Bearer ${GH_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/repos/${GH_REPO}/actions/runners/registration-token" \
-    | jq -r '.token // empty' || true)"
+    "https://api.github.com/repos/${GH_REPO}/actions/runners/registration-token" |
+    jq -r '.token // empty' || true)"
 : "${TOKEN:?FATAL: could not mint registration token (restart:always retries)}"
 
 CONFIG_ARGS=(

@@ -11,7 +11,10 @@ REF="${2:-main}"
 : "${GH_TOKEN:?GH_TOKEN not set}"
 
 case "$WORKFLOW" in
-    */*) echo "FATAL: '${WORKFLOW}' looks like a repo — old syntax dispatch.sh OWNER/REPO WORKFLOW REF is gone. Use dispatch.sh WORKFLOW [REF]; the repo comes from GH_REPO." >&2; exit 1 ;;
+    */*)
+        echo "FATAL: '${WORKFLOW}' looks like a repo — old syntax dispatch.sh OWNER/REPO WORKFLOW REF is gone. Use dispatch.sh WORKFLOW [REF]; the repo comes from GH_REPO." >&2
+        exit 1
+        ;;
 esac
 
 http_code="$(curl -sS -o /tmp/dispatch.out -w '%{http_code}' --max-time 30 \
@@ -24,5 +27,5 @@ http_code="$(curl -sS -o /tmp/dispatch.out -w '%{http_code}' --max-time 30 \
 
 case "$http_code" in
     204) echo "$(date -u +%FT%TZ) dispatch OK ${GH_REPO}/${WORKFLOW}@${REF} (204)" ;;
-    *)   echo "$(date -u +%FT%TZ) dispatch FAILED ${GH_REPO}/${WORKFLOW}@${REF} http=${http_code} body=$(head -c 300 /tmp/dispatch.out 2>/dev/null | tr '\n' ' ') (retries next cron tick)" ;;
+    *) echo "$(date -u +%FT%TZ) dispatch FAILED ${GH_REPO}/${WORKFLOW}@${REF} http=${http_code} body=$(head -c 300 /tmp/dispatch.out 2>/dev/null | tr '\n' ' ') (retries next cron tick)" ;;
 esac

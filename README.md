@@ -69,6 +69,10 @@ Point your workflow at the pool with `on: workflow_dispatch` and `runs-on: [self
 - The runner registers with `--disableupdate`, so an image rebuild is the only update path: `docker compose build --build-arg RUNNER_VERSION=<latest> && docker compose up -d`. Rebuild at least monthly; GitHub stops queueing jobs to runners more than 30 days behind.
 - For public repos with untrusted PRs, apply [GitHub's self-hosted runner guidance](https://docs.github.com/en/actions/reference/security/secure-use); prefer private or trusted repos.
 
+## Development
+
+Formatting is enforced by [pre-commit](https://pre-commit.com): install pre-commit, run `pre-commit install` once per clone, and every commit reformats what you touch — shell via shfmt, YAML/Dockerfile/Markdown via prettier, plus trailing whitespace and trailing newlines. `pre-commit run --all-files` reformats the whole tree in one pass.
+
 ## License
 
 [MIT](LICENSE)
