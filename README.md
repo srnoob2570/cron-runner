@@ -40,7 +40,9 @@ One token serves both containers. Create it under Settings → Developer setting
 
 The two permissions map to the two calls: `Actions: write` dispatches your workflows, `Administration: write` mints the registration token the runner uses at every boot. Registration also requires the token's user to be an admin on the repo. Fine-grained is the smaller grant; whichever you pick, a read-only token will fail.
 
-Fine-grained tokens expire, at most a year out. After expiry the scheduler logs `dispatch FAILED ... http=401` and the runner dies on every boot trying to mint its token. Mint a fresh one and `docker compose restart`.
+Fine-grained tokens expire, at most a year out. After expiry the scheduler logs `dispatch FAILED ... http=401` and the runner dies on every boot trying to mint its token. Mint a fresh one, paste it into `.env`, and run `docker compose up -d`.
+
+A bare `restart` is not enough here. Restart does not re-read `.env`, so the containers keep the old token until they are recreated. Revoke the previous token only after both halves work again. Classic and fine-grained are interchangeable, so switching between them is just another swap.
 
 ### `crontab`
 
