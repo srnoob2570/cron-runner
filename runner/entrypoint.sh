@@ -11,19 +11,28 @@ set -euo pipefail
 
 : "${GH_TOKEN:?GH_TOKEN required}"
 : "${GH_REPO:?GH_REPO required, e.g. owner/repo}"
+case "$GH_REPO" in
+    /* | */ | */*/* | http://* | https://* | *" "*)
+        echo "FATAL: GH_REPO must be 'owner/repo' (got '${GH_REPO}')" >&2
+        exit 1
+        ;;
+esac
 RUNNER_NAME="${RUNNER_NAME:-cron-runner}"
 
 # Wipe the previous config first. config.sh refuses to run while .runner
 # exists, and a fresh registration is the point of this setup.
 rm -f .runner .credentials .credentials_rsaparams
 
-TOKEN="$(curl -sSL --max-time 30 -X POST \
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+http_code="$(curl -sSL -o "$tmp" -w '%{http_code}' --max-time 30 -X POST \
     -H "Authorization: Bearer ${GH_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/repos/${GH_REPO}/actions/runners/registration-token" |
-    jq -r '.token // empty' || true)"
-: "${TOKEN:?FATAL: could not mint registration token (restart:always retries)}"
+    "https://api.github.com/repos/${GH_REPO}/actions/runners/registration-token")" || http_code=000
+TOKEN="$(jq -r '.token // empty' "$tmp" 2>/dev/null || true)"
+: "${TOKEN:?FATAL: could not mint registration token (http=${http_code} body=$(head -c 300 "$tmp" 2>/dev/null | tr '\n' ' '); restart:always retries)}"
+rm -f "$tmp"
 
 CONFIG_ARGS=(
     --unattended

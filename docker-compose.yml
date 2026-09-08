@@ -11,6 +11,11 @@ services:
       dockerfile: scheduler/Dockerfile
     image: cron-runner-scheduler:latest
     restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       GH_TOKEN: ${GH_TOKEN}
       GH_REPO: ${GH_REPO}
@@ -29,6 +34,11 @@ services:
       context: .
     image: cron-runner:latest
     restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       GH_TOKEN: ${GH_TOKEN}
       GH_REPO: ${GH_REPO}
