@@ -1,4 +1,4 @@
-# Formatter-only setup: shfmt for shell, prettier for YAML/Dockerfile/Markdown,
+# Formatter-only setup: shfmt for shell, prettier for YAML/Markdown,
 # plus basic whitespace hygiene. Run `pre-commit install` once after cloning.
 # One-time reformat: pre-commit run --all-files
 repos:
@@ -19,4 +19,4 @@ repos:
     hooks:
       - id: prettier
         additional_dependencies: [prettier@3.9.6]
-        files: \.(yml|yaml|md|markdown)$|(^|/)Dockerfile$
+        files: \.(yml|yaml|md|markdown)$
