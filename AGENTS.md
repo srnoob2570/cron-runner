@@ -1,0 +1,48 @@
+# AGENTS.md
+
+## Repository Map
+
+A full codemap is available at `codemap.md` in the project root.
+
+Before working on any task, read `codemap.md` to understand:
+
+- Project architecture and entry points
+- Directory responsibilities and design patterns
+- Data flow and integration points between modules
+
+For deep work on a specific folder, also read that folder's `codemap.md`.
+
+## Commands
+
+- No test suite. Verification: `pre-commit run --all-files` (shfmt for `*.sh` with 4-space indent + `-ci`, prettier for YAML/Markdown).
+- Compose validity check: `docker compose config -q`.
+- Run the stack: `docker compose up -d --build` (only after the setup order below).
+- Wipe everything a job installed: `docker compose up -d --build --force-recreate` (state lives only in tmpfs).
+
+## Setup order (matters)
+
+Run `cp .env.example .env` and `cp crontab.example crontab` **before** `docker compose up -d --build`. If `up` runs first, Docker creates `./crontab` as an empty root-owned directory and the scheduler mount fails; fix with `sudo rm -rf ./crontab` and repeat.
+
+## Recreate vs restart
+
+- `.env` changes (e.g., new `GH_TOKEN`): `docker compose up -d` — `restart` does not re-read `.env`, so containers keep the old value until recreated.
+- Crontab edits: `docker compose restart scheduler` is enough (mounted read-only, re-read only at supercronic start).
+
+## Runner updates
+
+The runner registers with `--disableupdate`: image rebuild is the only update path. GitHub stops queueing jobs to runners more than 30 days behind — rebuild monthly with `docker compose build --build-arg RUNNER_VERSION=<latest>` then `docker compose up -d`.
+
+## Token contract
+
+One PAT serves both services; a read-only token fails. Classic: `repo` scope. Fine-grained: `Actions: RW` + `Administration: RW`, and the token user must be admin on `GH_REPO`. Token expiry shows as `dispatch FAILED http=401` plus runner boot failures — fix by updating `.env` and recreating.
+
+## Shell dialects
+
+- `scheduler/*.sh` run on Alpine busybox: POSIX `/bin/sh`, `set -eu`; no bash-only syntax.
+- `runner/entrypoint.sh` is bash on the actions-runner image: `set -euo pipefail`.
+
+## Conventions
+
+- Cron lines call `dispatch.sh WORKFLOW [REF]` (ref defaults to `main`); the repo always comes from `GH_REPO`. The old `OWNER/REPO WORKFLOW REF` form is rejected by the script.
+- Secrets (`.env`, `.env.prod`, `crontab`) are gitignored: never commit or print them.
+- Docker stays out by design (dockerless runner, no socket, stripped binaries, build-time check). Keep image/Compose edits docker-free.
