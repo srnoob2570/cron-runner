@@ -18,13 +18,13 @@ For deep work on a specific folder, also read that folder's `codemap.md`.
 - Compose validity check: `docker compose config -q` (also with `-f docker-compose.scheduler.yml` / `-f docker-compose.runner.yml` for the split templates).
 - Run the stack: `docker compose up -d --build` (only after the setup order below).
 - Split templates: `docker compose -f docker-compose.scheduler.yml up -d --build` (scheduler only, needs `./crontab` mounted) and `docker compose -f docker-compose.runner.yml up -d --build` (runner only). Each has its own project `name:` (`cron-runner-scheduler` / `cron-runner-runner`) so both can run from one clone.
-- Wipe everything a job installed: `docker compose up -d --build --force-recreate` plus `rm -rf runner-cache/*` (tmpfs state dies with the container; the toolchain cache in `./runner-cache` persists until deleted).
+- Wipe everything a job installed: `docker compose up -d --build --force-recreate` (tmpfs state dies with the container). The toolchain cache in the `runner-cache` named volume survives everything until wiped: `docker compose exec runner sh -c 'rm -rf /home/runner/.cache/*'` (no downtime) or `docker compose down -v`.
 
 ## Setup order (matters)
 
 Run `cp .env.example .env` and `cp crontab.example crontab` **before** `docker compose up -d --build`. If `up` runs first, Docker creates `./crontab` as an empty root-owned directory and the scheduler mount fails; fix with `sudo rm -rf ./crontab` and repeat.
 
-Same rule for the runner cache: `mkdir -p runner-cache` and chown it to the runner user (`docker run --rm --entrypoint id ghcr.io/actions/actions-runner:<version>` prints uid/gid) before `up`. Docker creates a missing bind-mount source as root and the runner is non-root, so the first cache-writing job fails with permission errors until the `chown` is done.
+The runner's `runner-cache` volume needs no host setup: the image seeds `/home/runner/.cache` with `runner` ownership, so Docker initializes a fresh volume with correct permissions.
 
 ## Recreate vs restart
 

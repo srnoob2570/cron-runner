@@ -6,7 +6,7 @@ A self-hosted GitHub Actions alternative to the unreliable native `schedule:` tr
 
 ## System Entry Points
 
-- `docker-compose.yml`: Stack definition — `scheduler` and `runner` services, hardening (`cap_drop: ALL`, `no-new-privileges`, memory/PID limits, tmpfs), `.env` variable injection, runner cache bind mount (`./runner-cache` → `/home/runner/.cache`) with toolchain redirect env vars.
+- `docker-compose.yml`: Stack definition — `scheduler` and `runner` services, hardening (`cap_drop: ALL`, `no-new-privileges`, memory/PID limits, tmpfs), `.env` variable injection, runner cache named volume (`runner-cache` → `/home/runner/.cache`) with toolchain redirect env vars.
 - `docker-compose.scheduler.yml` / `docker-compose.runner.yml`: Split templates, one service each (own project `name:`; `cron-runner-scheduler` / `cron-runner-runner`), same hardening as the full stack.
 - `Dockerfile`: Runner image — official `ghcr.io/actions/actions-runner` with docker binaries/CLI plugins stripped, plus `git curl unzip jq` and the Tauri release toolchain (GTK/WebKit dev libs, build-essential, rpm, Rust via rustup minimal in `/usr/local`); build-time check that `docker`/`gh` are absent. Entry: `runner/entrypoint.sh`.
 - `scheduler/Dockerfile`: Scheduler image — `alpine:3.22` + pinned/SHA256-verified supercronic; Alpine's default crontab removed so a missing mount fails loudly. Entry: `scheduler/entrypoint.sh`.
@@ -15,10 +15,10 @@ A self-hosted GitHub Actions alternative to the unreliable native `schedule:` tr
 
 ## Directory Map (Aggregated)
 
-| Directory    | Responsibility Summary                                                                                                                                                                                                                                                                   | Detailed Map                     |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| `runner/`    | Ephemeral runner boot cycle: registration-token minting, config wipe, unattended re-registration with `--replace` (exactly one runner entry on GitHub), secret unsetting, then `exec` of the listener. Persistent toolchain cache lives outside this dir, mounted from `./runner-cache`. | [View Map](runner/codemap.md)    |
-| `scheduler/` | Cron-to-dispatch translation: supercronic runs the mounted crontab; `dispatch.sh` POSTs `workflow_dispatch` per tick, logging HTTP 204 or deferring to the next tick on failure.                                                                                                         | [View Map](scheduler/codemap.md) |
+| Directory    | Responsibility Summary                                                                                                                                                                                                                                                                        | Detailed Map                     |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `runner/`    | Ephemeral runner boot cycle: registration-token minting, config wipe, unattended re-registration with `--replace` (exactly one runner entry on GitHub), secret unsetting, then `exec` of the listener. Persistent toolchain cache lives outside this dir, in the `runner-cache` named volume. | [View Map](runner/codemap.md)    |
+| `scheduler/` | Cron-to-dispatch translation: supercronic runs the mounted crontab; `dispatch.sh` POSTs `workflow_dispatch` per tick, logging HTTP 204 or deferring to the next tick on failure.                                                                                                              | [View Map](scheduler/codemap.md) |
 
 ## Data & Control Flow
 
@@ -29,7 +29,7 @@ A self-hosted GitHub Actions alternative to the unreliable native `schedule:` tr
 
 ## Cross-Cutting Concerns
 
-- **Containment:** both containers drop all capabilities, forbid privilege escalation, cap memory/PIDs, use tmpfs scratch; no docker daemon, socket, or ports anywhere. The runner's single data volume is the toolchain cache bind mount (`./runner-cache` → `/home/runner/.cache`, env redirects for npm/Go/Gradle/Cargo); it survives recreations and is cleaned manually (`rm -rf runner-cache/*`).
+- **Containment:** both containers drop all capabilities, forbid privilege escalation, cap memory/PIDs, use tmpfs scratch; no docker daemon, socket, or ports anywhere. The runner's single data volume is the toolchain cache (`runner-cache` named volume → `/home/runner/.cache`, env redirects for npm/Go/Gradle/Cargo; the image seeds the mount point with runner ownership); it survives recreations and is cleaned from inside the container (`docker compose exec runner sh -c 'rm -rf /home/runner/.cache/*'`).
 - **Update path:** runner registers with `--disableupdate`; image rebuild (`--build-arg RUNNER_VERSION=`) is the only update path — required at least monthly or GitHub stops queueing jobs.
 - **Formatting:** `.pre-commit-config.yaml` enforces shfmt (shell, 4-space indent) and prettier (YAML/Markdown) plus whitespace hygiene.
 - **Token lifecycle:** token expiry surfaces as `dispatch FAILED http=401` + runner boot failures; fix requires `docker compose up -d` (recreate, not restart) after updating `.env`.

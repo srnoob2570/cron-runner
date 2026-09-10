@@ -1,6 +1,5 @@
 .env
 .env.prod
 crontab
-runner-cache/
 docs/SIMPLIFICATION.md
 .slim/

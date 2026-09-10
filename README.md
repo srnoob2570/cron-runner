@@ -7,7 +7,7 @@ GitHub's native `schedule:` trigger is best effort. Under load GitHub can drop a
 Two containers, one host:
 
 1. **Scheduler.** supercronic runs your crontab. Every tick dispatches one workflow through the GitHub REST API and logs the HTTP status (`204` = dispatched; a failure retries on the next tick).
-2. **Runner.** The official runner, dockerless. No docker inside, no socket, no ports. Jobs run directly in the container; one bind mount keeps toolchain caches across recreations.
+2. **Runner.** The official runner, dockerless. No docker inside, no socket, no ports. Jobs run directly in the container; one persistent volume keeps toolchain caches across recreations.
 
 ## Quick start
 
@@ -70,36 +70,25 @@ Point your workflow at the pool with `on: workflow_dispatch` and `runs-on: [self
 
 ### `runner-cache`
 
-The runner keeps one persistent cache: `./runner-cache`, mounted at `/home/runner/.cache`. Toolchain caches survive recreations and image rebuilds there. pip and uv cache under `~/.cache` on their own; the compose file redirects npm, Go, Gradle and Cargo into the same directory (`npm_config_cache`, `GOMODCACHE`, `GOCACHE`, `GRADLE_USER_HOME`, `CARGO_HOME`), so a single folder covers every toolchain.
+The runner keeps one persistent cache: the `runner-cache` volume, mounted at `/home/runner/.cache`. Toolchain caches survive recreations and image rebuilds there. pip and uv cache under `~/.cache` on their own; the compose file redirects npm, Go, Gradle and Cargo into the same directory (`npm_config_cache`, `GOMODCACHE`, `GOCACHE`, `GRADLE_USER_HOME`, `CARGO_HOME`), so one volume covers every toolchain. The image seeds the mount point with `runner` ownership, so a fresh volume just works: no host-side setup, no chown.
 
-Create the directory and hand it to the runner user before the first `up`. Docker creates a missing bind-mount source as root, and the runner runs as a non-root user:
+`RUNNER_TOOL_CACHE` points at the same volume, so `setup-*` actions (Bun, Node, Python) download their runtimes once and reuse them across runs; wiping the cache removes them and the next run re-downloads.
 
-```bash
-mkdir -p runner-cache
-docker run --rm --entrypoint id ghcr.io/actions/actions-runner:2.337.0  # uid=…(runner) gid=…(runner)
-sudo chown -R <uid>:<gid> runner-cache
-docker compose up -d --build
-```
-
-The first job to touch the cache fails with permission errors until that `chown` is in place.
-
-`RUNNER_TOOL_CACHE` points at the same mount, so `setup-*` actions (Bun, Node, Python) download their runtimes once and reuse them across runs; wiping the cache removes them and the next run re-downloads.
-
-Cleaning is manual by design:
+Cleaning is manual by design, from inside the running container:
 
 ```bash
-du -sh runner-cache         # watch size; the cache grows without limit
-rm -rf runner-cache/*       # wipe everything
-rm -rf runner-cache/npm     # or one toolchain
+docker compose exec runner du -sh /home/runner/.cache                 # watch size; the cache grows without limit
+docker compose exec runner sh -c 'rm -rf /home/runner/.cache/*'       # wipe everything
+docker compose exec runner sh -c 'rm -rf /home/runner/.cache/npm'     # or one toolchain
 ```
 
-`--force-recreate` no longer resets caches. When a build breaks on a stale cache, delete that toolchain's subdirectory and rerun. `actions/cache` also works here: it stores on GitHub's side, and this local cache complements it rather than replacing it.
+`--force-recreate` no longer resets caches. When a build breaks on a stale cache, delete that toolchain's subdirectory and rerun. To remove the volume entirely, `docker compose down -v` (also stops the containers). `actions/cache` also works here: it stores on GitHub's side, and this local cache complements it rather than replacing it.
 
 ## How it works
 
 - **Scheduler.** Supercronic, pinned by version + sha256 and baked into the image at build time, reads `/etc/crontabs/root`. Each job calls `POST /repos/{owner}/{repo}/actions/workflows/{workflow}/dispatches` and logs the result.
 - **Runner.** Ephemeral per boot. Every container start mints a fresh registration token, wipes the previous config and re-registers with `--replace` under the same name. GitHub ends up with exactly one runner entry, and each boot costs one API call. The entrypoint unsets `GH_TOKEN` before the listener starts; jobs only see the ephemeral `GITHUB_TOKEN` GitHub injects per run. If the listener dies, `restart: always` re-runs the whole cycle.
-- **Containment.** Both containers run with `cap_drop: ALL`, `no-new-privileges`, memory/PID limits and tmpfs scratch. Nothing a job installs survives a recreate: `docker compose up -d --build --force-recreate`. The one exception is the toolchain cache in `runner-cache/`, which persists until you delete it.
+- **Containment.** Both containers run with `cap_drop: ALL`, `no-new-privileges`, memory/PID limits and tmpfs scratch. Nothing a job installs survives a recreate: `docker compose up -d --build --force-recreate`. The one exception is the toolchain cache volume, which persists until you wipe it.
 
 ## Limitations
 

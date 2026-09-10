@@ -36,6 +36,10 @@ RUN rm -f /usr/bin/docker /usr/bin/dockerd /usr/bin/docker-init /usr/bin/docker-
 
 COPY --chmod=0755 runner/entrypoint.sh /usr/local/bin/entrypoint.sh
 
+# Seed the cache mount point with runner ownership: a named volume
+# copies the image dir on first use, so no host-side chown is needed.
+RUN mkdir -p /home/runner/.cache && chown runner:runner /home/runner/.cache
+
 # Fail the build if docker or gh sneak back in.
 RUN ! command -v docker >/dev/null 2>&1 \
     && ! command -v dockerd >/dev/null 2>&1 \

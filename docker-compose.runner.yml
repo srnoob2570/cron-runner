@@ -20,18 +20,18 @@ services:
       RUNNER_NAME: ${RUNNER_NAME:-}
       RUNNER_LABELS: ${RUNNER_LABELS:-self-hosted,cron-runner}
       # Point every tool whose cache default lives outside ~/.cache at the
-      # one persistent mount below; pip/uv already cache in ~/.cache.
+      # one persistent volume below; pip/uv already cache in ~/.cache.
       npm_config_cache: /home/runner/.cache/npm
       GOMODCACHE: /home/runner/.cache/go/mod
       GOCACHE: /home/runner/.cache/go/build
       GRADLE_USER_HOME: /home/runner/.cache/gradle
       CARGO_HOME: /home/runner/.cache/cargo
-      # setup-* toolchains persist on the cache mount too.
+      # setup-* toolchains persist on the cache volume too.
       RUNNER_TOOL_CACHE: /home/runner/.cache/toolcache
       # AppImage bundling has no FUSE inside the container.
       APPIMAGE_EXTRACT_AND_RUN: "1"
     volumes:
-      - ./runner-cache:/home/runner/.cache
+      - runner-cache:/home/runner/.cache
     cap_drop: ["ALL"]
     security_opt:
       - no-new-privileges:true
@@ -44,3 +44,8 @@ services:
     tmpfs:
       - /tmp:rw,nosuid,size=1g
       - /run:rw,nosuid,size=64m
+
+volumes:
+  # One persistent cache for the runner: pip/uv, npm, Go, Gradle, Cargo
+  # and the setup-* tool cache, all under /home/runner/.cache.
+  runner-cache:
