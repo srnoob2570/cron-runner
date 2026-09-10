@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # only come from here. Bun itself rides in per-run via setup-bun into
 # RUNNER_TOOL_CACHE (persisted on the cache mount by compose).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential file wget rpm \
+        build-essential file wget rpm xdg-utils \
         libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
         libayatana-appindicator3-dev librsvg2-dev \
     && rm -rf /var/lib/apt/lists/*
