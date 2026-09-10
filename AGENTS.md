@@ -18,11 +18,13 @@ For deep work on a specific folder, also read that folder's `codemap.md`.
 - Compose validity check: `docker compose config -q` (also with `-f docker-compose.scheduler.yml` / `-f docker-compose.runner.yml` for the split templates).
 - Run the stack: `docker compose up -d --build` (only after the setup order below).
 - Split templates: `docker compose -f docker-compose.scheduler.yml up -d --build` (scheduler only, needs `./crontab` mounted) and `docker compose -f docker-compose.runner.yml up -d --build` (runner only). Each has its own project `name:` (`cron-runner-scheduler` / `cron-runner-runner`) so both can run from one clone.
-- Wipe everything a job installed: `docker compose up -d --build --force-recreate` (state lives only in tmpfs).
+- Wipe everything a job installed: `docker compose up -d --build --force-recreate` plus `rm -rf runner-cache/*` (tmpfs state dies with the container; the toolchain cache in `./runner-cache` persists until deleted).
 
 ## Setup order (matters)
 
 Run `cp .env.example .env` and `cp crontab.example crontab` **before** `docker compose up -d --build`. If `up` runs first, Docker creates `./crontab` as an empty root-owned directory and the scheduler mount fails; fix with `sudo rm -rf ./crontab` and repeat.
+
+Same rule for the runner cache: `mkdir -p runner-cache` and chown it to the runner user (`docker run --rm --entrypoint id ghcr.io/actions/actions-runner:<version>` prints uid/gid) before `up`. Docker creates a missing bind-mount source as root and the runner is non-root, so the first cache-writing job fails with permission errors until the `chown` is done.
 
 ## Recreate vs restart
 
@@ -47,3 +49,4 @@ One PAT serves both services; a read-only token fails. Classic: `repo` scope. Fi
 - Cron lines call `dispatch.sh WORKFLOW [REF]` (ref defaults to `main`); the repo always comes from `GH_REPO`. The old `OWNER/REPO WORKFLOW REF` form is rejected by the script.
 - Secrets (`.env`, `.env.prod`, `crontab`) are gitignored: never commit or print them.
 - Docker stays out by design (dockerless runner, no socket, stripped binaries, build-time check). Keep image/Compose edits docker-free.
+- apt-level toolchain deps (Tauri libs, build-essential, Rust) are baked into the `Dockerfile`: the runner is non-root with no sudo, so a workflow's own `sudo apt-get install` step can never work. Workflow edits in target repos must drop such steps.

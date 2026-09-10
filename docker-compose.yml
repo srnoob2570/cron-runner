@@ -44,10 +44,23 @@ services:
       GH_REPO: ${GH_REPO}
       RUNNER_NAME: ${RUNNER_NAME:-}
       RUNNER_LABELS: ${RUNNER_LABELS:-self-hosted,cron-runner}
+      # Point every tool whose cache default lives outside ~/.cache at the
+      # one persistent mount below; pip/uv already cache in ~/.cache.
+      npm_config_cache: /home/runner/.cache/npm
+      GOMODCACHE: /home/runner/.cache/go/mod
+      GOCACHE: /home/runner/.cache/go/build
+      GRADLE_USER_HOME: /home/runner/.cache/gradle
+      CARGO_HOME: /home/runner/.cache/cargo
+      # setup-* toolchains persist on the cache mount too.
+      RUNNER_TOOL_CACHE: /home/runner/.cache/toolcache
+      # AppImage bundling has no FUSE inside the container.
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    volumes:
+      - ./runner-cache:/home/runner/.cache
     cap_drop: ["ALL"]
     security_opt:
       - no-new-privileges:true
-    mem_limit: 2g
+    mem_limit: 6g
     pids_limit: 384
     ulimits:
       nofile:
