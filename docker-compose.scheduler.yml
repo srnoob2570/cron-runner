@@ -1,0 +1,30 @@
+# cron-runner: scheduler only. Dispatches workflows from your crontab; no runner here.
+#   cp .env.example .env       (GH_TOKEN, GH_REPO)
+#   cp crontab.example crontab (your schedule, gitignored)
+#   docker compose -f docker-compose.scheduler.yml up -d --build
+name: cron-runner-scheduler
+
+services:
+  scheduler:
+    build:
+      context: .
+      dockerfile: scheduler/Dockerfile
+    image: cron-runner-scheduler:latest
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      GH_TOKEN: ${GH_TOKEN}
+      GH_REPO: ${GH_REPO}
+    volumes:
+      - ./crontab:/etc/crontabs/root:ro
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,nosuid,size=16m

@@ -7,6 +7,7 @@ A self-hosted GitHub Actions alternative to the unreliable native `schedule:` tr
 ## System Entry Points
 
 - `docker-compose.yml`: Stack definition — `scheduler` and `runner` services, hardening (`cap_drop: ALL`, `no-new-privileges`, memory/PID limits, tmpfs), `.env` variable injection.
+- `docker-compose.scheduler.yml` / `docker-compose.runner.yml`: Split templates, one service each (own project `name:`; `cron-runner-scheduler` / `cron-runner-runner`), same hardening as the full stack.
 - `Dockerfile`: Runner image — official `ghcr.io/actions/actions-runner` with docker binaries/CLI plugins stripped, plus `git curl unzip jq`; build-time check that `docker`/`gh` are absent. Entry: `runner/entrypoint.sh`.
 - `scheduler/Dockerfile`: Scheduler image — `alpine:3.22` + pinned/SHA256-verified supercronic; Alpine's default crontab removed so a missing mount fails loudly. Entry: `scheduler/entrypoint.sh`.
 - `.env.example`: Configuration contract — `GH_TOKEN` (PAT: classic `repo` scope, or fine-grained `Administration:RW` + `Actions:RW`), `GH_REPO`; optional `RUNNER_NAME`, `RUNNER_LABELS`.

@@ -15,8 +15,9 @@ For deep work on a specific folder, also read that folder's `codemap.md`.
 ## Commands
 
 - No test suite. Verification: `pre-commit run --all-files` (shfmt for `*.sh` with 4-space indent + `-ci`, prettier for YAML/Markdown).
-- Compose validity check: `docker compose config -q`.
+- Compose validity check: `docker compose config -q` (also with `-f docker-compose.scheduler.yml` / `-f docker-compose.runner.yml` for the split templates).
 - Run the stack: `docker compose up -d --build` (only after the setup order below).
+- Split templates: `docker compose -f docker-compose.scheduler.yml up -d --build` (scheduler only, needs `./crontab` mounted) and `docker compose -f docker-compose.runner.yml up -d --build` (runner only). Each has its own project `name:` (`cron-runner-scheduler` / `cron-runner-runner`) so both can run from one clone.
 - Wipe everything a job installed: `docker compose up -d --build --force-recreate` (state lives only in tmpfs).
 
 ## Setup order (matters)

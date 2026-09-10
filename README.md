@@ -20,6 +20,17 @@ docker compose up -d --build
 
 The scheduler starts dispatching on the next tick, and the runner shows up under **Settings → Actions → Runners**.
 
+### Split deployments
+
+Only one half? Each service also ships as its own template:
+
+```bash
+docker compose -f docker-compose.scheduler.yml up -d --build  # cron dispatch only
+docker compose -f docker-compose.runner.yml up -d --build     # runner only
+```
+
+Same `.env`, same images, same hardening. The scheduler template still needs the `cp crontab.example crontab` step first. On one host, run both templates as-is — each gets its own Compose project (`cron-runner-scheduler`, `cron-runner-runner`) so they don't clobber each other. `docker compose -f <template> down` then targets exactly one.
+
 > Run the `cp` steps **before** `up`. If `up` runs first, Docker creates `./crontab` as an empty root-owned directory and the scheduler's mount fails. Remove it (`sudo rm -rf ./crontab`) and repeat.
 
 ### `.env`
