@@ -20,14 +20,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libayatana-appindicator3-dev librsvg2-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Rust via rustup, minimal profile. RUSTUP_HOME stays in the image;
-# compose redirects CARGO_HOME at runtime to the cache mount so the
-# registry cache survives recreations.
-ENV RUSTUP_HOME=/usr/local/rustup \
-    CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/cargo/bin:${PATH}
-RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
-    && rustc --version
+# Rust is NOT baked: workflows install it per-run (e.g. dtolnay/rust-toolchain),
+# and compose points CARGO_HOME/RUSTUP_HOME at the cache mount so the install
+# survives recreations. Baking rustup here would leave a root-owned copy the
+# runner user cannot write to, which breaks rustup's per-run channel sync.
 
 # Strip the docker binaries shipped by the official image.
 RUN rm -f /usr/bin/docker /usr/bin/dockerd /usr/bin/docker-init /usr/bin/docker-proxy \

@@ -70,7 +70,7 @@ Point your workflow at the pool with `on: workflow_dispatch` and `runs-on: [self
 
 ### `runner-cache`
 
-The runner keeps one persistent cache: the `runner-cache` volume, mounted at `/home/runner/.cache`. Toolchain caches survive recreations and image rebuilds there. pip and uv cache under `~/.cache` on their own; the compose file redirects npm, Go, Gradle and Cargo into the same directory (`npm_config_cache`, `GOMODCACHE`, `GOCACHE`, `GRADLE_USER_HOME`, `CARGO_HOME`), so one volume covers every toolchain. The image seeds the mount point with `runner` ownership, so a fresh volume just works: no host-side setup, no chown.
+The runner keeps one persistent cache: the `runner-cache` volume, mounted at `/home/runner/.cache`. Toolchain caches survive recreations and image rebuilds there. pip and uv cache under `~/.cache` on their own; the compose file redirects npm, Go, Gradle, Cargo and rustup into the same directory (`npm_config_cache`, `GOMODCACHE`, `GOCACHE`, `GRADLE_USER_HOME`, `CARGO_HOME`, `RUSTUP_HOME`), so one volume covers every toolchain. Rust itself is not baked into the image: a workflow installs it per-run (for example with `dtolnay/rust-toolchain`), and the install lands on the volume, so only the first job pays the download. The image seeds the mount point with `runner` ownership, so a fresh volume just works: no host-side setup, no chown.
 
 `RUNNER_TOOL_CACHE` points at the same volume, so `setup-*` actions (Bun, Node, Python) download their runtimes once and reuse them across runs; wiping the cache removes them and the next run re-downloads.
 

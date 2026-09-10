@@ -51,6 +51,7 @@ services:
       GOCACHE: /home/runner/.cache/go/build
       GRADLE_USER_HOME: /home/runner/.cache/gradle
       CARGO_HOME: /home/runner/.cache/cargo
+      RUSTUP_HOME: /home/runner/.cache/rustup
       # setup-* toolchains persist on the cache volume too.
       RUNNER_TOOL_CACHE: /home/runner/.cache/toolcache
       # AppImage bundling has no FUSE inside the container.

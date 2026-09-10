@@ -49,4 +49,4 @@ One PAT serves both services; a read-only token fails. Classic: `repo` scope. Fi
 - Cron lines call `dispatch.sh WORKFLOW [REF]` (ref defaults to `main`); the repo always comes from `GH_REPO`. The old `OWNER/REPO WORKFLOW REF` form is rejected by the script.
 - Secrets (`.env`, `.env.prod`, `crontab`) are gitignored: never commit or print them.
 - Docker stays out by design (dockerless runner, no socket, stripped binaries, build-time check). Keep image/Compose edits docker-free.
-- apt-level toolchain deps (Tauri libs, build-essential, Rust) are baked into the `Dockerfile`: the runner is non-root with no sudo, so a workflow's own `sudo apt-get install` step can never work. Workflow edits in target repos must drop such steps.
+- apt-level toolchain deps (Tauri libs, build-essential) are baked into the `Dockerfile`: the runner is non-root with no sudo, so a workflow's own `sudo apt-get install` step can never work. Workflow edits in target repos must drop such steps. Rust is not baked: workflows install it per-run (e.g. `dtolnay/rust-toolchain`), persisted via `CARGO_HOME`/`RUSTUP_HOME` on the cache volume.
