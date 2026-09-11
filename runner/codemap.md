@@ -9,7 +9,7 @@ Container lifecycle layer for a dockerless, ephemeral GitHub Actions self-hosted
 - **Init/Supervisor pattern (container entrypoint as bootstrap):** `entrypoint.sh` acts as a one-shot bootstrap; `exec ./run.sh` replaces the shell so the runner process becomes PID 1 and receives container signals directly (`RUNNER_MANUALLY_TRAP_SIG=1`).
 - **Idempotent re-registration via `--replace`:** a stable `RUNNER_NAME` (default `cron-runner`) plus `--replace` guarantees GitHub holds exactly one runner entry regardless of container recreations. `--disableupdate` pins the runner version to the image build.
 - **Fail-fast environment contract:** `set -euo pipefail`; `GH_TOKEN` and `GH_REPO` are mandatory (`:?` expansion). Failure at any step exits the container, and Compose's `restart: always` retries the whole cycle.
-- **One persistent cache, outside the boot cycle:** the `runner-cache` named volume is mounted at `/home/runner/.cache` and survives recreations and rebuilds. pip/uv cache there by default; compose env vars (`npm_config_cache`, `GOMODCACHE`, `GOCACHE`, `GRADLE_USER_HOME`, `CARGO_HOME`, `RUSTUP_HOME`, `CARGO_TARGET_DIR`) redirect the other toolchains into it, and `RUNNER_TOOL_CACHE` keeps setup-* runtimes there too. Rust is not baked into the image: workflows install it per-run and the install persists on the volume. The image seeds the mount point with runner ownership so a fresh volume just works. `/tmp` is a tmpfs mounted with `exec` because jobs run binaries extracted there (rustup-init, AppImage tools). The entrypoint does no cache work; cleaning is manual (`docker compose exec runner sh -c 'rm -rf /home/runner/.cache/*'`).
+- **Stateless runner, cold starts:** no persistent volumes; every job starts from the image as-is. System deps come from per-run `sudo apt-get` (the image ships sudo with a NOPASSWD sudoers entry for `runner`). `APPIMAGE_EXTRACT_AND_RUN=1` (compose) covers AppImage bundling without FUSE. The entrypoint does no cache work.
 - **Secret hygiene:** the PAT (`GH_TOKEN`), repo, and minted token are `unset` before the listener starts, so job processes only see the per-run ephemeral `GITHUB_TOKEN` injected by GitHub.
 
 ## Flow
@@ -23,7 +23,7 @@ Container lifecycle layer for a dockerless, ephemeral GitHub Actions self-hosted
 ## Integration
 
 - Built by: root `Dockerfile` (FROM `ghcr.io/actions/actions-runner:$RUNNER_VERSION`, docker binaries stripped, `entrypoint.sh` copied to `/usr/local/bin/`).
-- Orchestrated by: `docker-compose.yml` `runner` service (`restart: always`, `cap_drop: ALL`, no-new-privileges, tmpfs scratch, cache named volume `runner-cache` → `/home/runner/.cache` + toolchain cache env vars).
+- Orchestrated by: `docker-compose.yml` `runner` service (`restart: always`, memory/PID caps, passwordless sudo for job installs, `APPIMAGE_EXTRACT_AND_RUN`).
 - Configured by: `.env` via Compose (`GH_TOKEN`, `GH_REPO`, `RUNNER_NAME`, `RUNNER_LABELS`).
 - Depends on: GitHub REST API (registration-token endpoint), official runner scripts (`config.sh`, `run.sh`).
 - Companion: `scheduler/` dispatches the workflows this runner then executes.

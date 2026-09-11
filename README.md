@@ -7,7 +7,7 @@ GitHub's native `schedule:` trigger is best effort. Under load GitHub can drop a
 Two containers, one host:
 
 1. **Scheduler.** supercronic runs your crontab. Every tick dispatches one workflow through the GitHub REST API and logs the HTTP status (`204` = dispatched; a failure retries on the next tick).
-2. **Runner.** The official runner, dockerless. No docker inside, no socket, no ports. Jobs run directly in the container; one persistent volume keeps toolchain caches across recreations.
+2. **Runner.** The official runner, dockerless. No docker inside, no socket, no ports. Jobs run directly in the container with passwordless sudo, GitHub-hosted style: workflows install their own system deps per-run.
 
 ## Quick start
 
@@ -29,7 +29,7 @@ docker compose -f docker-compose.scheduler.yml up -d --build  # cron dispatch on
 docker compose -f docker-compose.runner.yml up -d --build     # runner only
 ```
 
-Same `.env`, same images, same hardening. The scheduler template still needs the `cp crontab.example crontab` step first. On one host, run both templates as-is — each gets its own Compose project (`cron-runner-scheduler`, `cron-runner-runner`) so they don't clobber each other. `docker compose -f <template> down` then targets exactly one.
+Same `.env`, same images. The scheduler template still needs the `cp crontab.example crontab` step first. On one host, run both templates as-is — each gets its own Compose project (`cron-runner-scheduler`, `cron-runner-runner`) so they don't clobber each other. `docker compose -f <template> down` then targets exactly one.
 
 > Run the `cp` steps **before** `up`. If `up` runs first, Docker creates `./crontab` as an empty root-owned directory and the scheduler's mount fails. Remove it (`sudo rm -rf ./crontab`) and repeat.
 
@@ -68,34 +68,31 @@ Times are UTC; edits apply after `docker compose restart scheduler`.
 
 Point your workflow at the pool with `on: workflow_dispatch` and `runs-on: [self-hosted, cron-runner]`. `RUNNER_LABELS` defaults to `self-hosted,cron-runner`, so the quick start works as-is. Set your own labels in `.env` if you want a different pool name.
 
-### `runner-cache`
+### System dependencies
 
-The runner keeps one persistent cache: the `runner-cache` volume, mounted at `/home/runner/.cache`. Toolchain caches survive recreations and image rebuilds there. pip and uv cache under `~/.cache` on their own; the compose file redirects npm, Go, Gradle, Cargo, rustup and cargo build outputs into the same directory (`npm_config_cache`, `GOMODCACHE`, `GOCACHE`, `GRADLE_USER_HOME`, `CARGO_HOME`, `RUSTUP_HOME`, `CARGO_TARGET_DIR`), so one volume covers every toolchain. Rust itself is not baked into the image: a workflow installs it per-run (for example with `dtolnay/rust-toolchain`), and the install lands on the volume, so only the first job pays the download and the dependency compile. The image seeds the mount point with `runner` ownership, so a fresh volume just works: no host-side setup, no chown.
+The image ships `sudo` with a passwordless entry for the `runner` user and nothing else beyond the runner itself. Workflows install what they need per-run, exactly like on GitHub-hosted runners:
 
-`RUNNER_TOOL_CACHE` points at the same volume, so `setup-*` actions (Bun, Node, Python) download their runtimes once and reuse them across runs; wiping the cache removes them and the next run re-downloads.
-
-Cleaning is manual by design, from inside the running container:
-
-```bash
-docker compose exec runner du -sh /home/runner/.cache                 # watch size; the cache grows without limit
-docker compose exec runner sh -c 'rm -rf /home/runner/.cache/*'       # wipe everything
-docker compose exec runner sh -c 'rm -rf /home/runner/.cache/npm'     # or one toolchain
+```yaml
+- name: Install system dependencies
+  run: |
+    sudo apt-get update
+    sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential xdg-utils rpm
 ```
 
-`--force-recreate` no longer resets caches. When a build breaks on a stale cache, delete that toolchain's subdirectory and rerun. To remove the volume entirely, `docker compose down -v` (also stops the containers). `actions/cache` also works here: it stores on GitHub's side, and this local cache complements it rather than replacing it.
+Nothing a job installs survives a recreate: `docker compose up -d --build --force-recreate` resets everything. There is no cache layer to outlive it; for heavyweight toolchains, `actions/cache` stores on GitHub's side and still works.
 
 ## How it works
 
 - **Scheduler.** Supercronic, pinned by version + sha256 and baked into the image at build time, reads `/etc/crontabs/root`. Each job calls `POST /repos/{owner}/{repo}/actions/workflows/{workflow}/dispatches` and logs the result.
 - **Runner.** Ephemeral per boot. Every container start mints a fresh registration token, wipes the previous config and re-registers with `--replace` under the same name. GitHub ends up with exactly one runner entry, and each boot costs one API call. The entrypoint unsets `GH_TOKEN` before the listener starts; jobs only see the ephemeral `GITHUB_TOKEN` GitHub injects per run. If the listener dies, `restart: always` re-runs the whole cycle.
-- **Containment.** Both containers run with `cap_drop: ALL`, `no-new-privileges`, memory/PID limits and tmpfs scratch. Nothing a job installs survives a recreate: `docker compose up -d --build --force-recreate`. The one exception is the toolchain cache volume, which persists until you wipe it.
+- **Containment.** Both containers cap memory/PIDs; the scheduler additionally runs with `cap_drop: ALL` and `no-new-privileges` (it needs no elevated calls). The runner keeps passwordless sudo so jobs can install system deps; the container has no docker binaries, no socket, and no host mounts. Nothing a job installs survives a recreate: `docker compose up -d --build --force-recreate`.
 
 ## Limitations
 
 - No `container:`, `services:` or `docker://` actions. There is no docker daemon inside; that's the point. Shell steps and JS actions work as-is; other toolchains come from the standard `setup-*` actions on demand.
 - The runner registers with `--disableupdate`, so an image rebuild is the only update path: `docker compose build --build-arg RUNNER_VERSION=<latest> && docker compose up -d`. Rebuild at least monthly; GitHub stops queueing jobs to runners more than 30 days behind.
 - For public repos with untrusted PRs, apply [GitHub's self-hosted runner guidance](https://docs.github.com/en/actions/reference/security/secure-use); prefer private or trusted repos.
-- The runner's `mem_limit: 2g` includes the 1g tmpfs on `/tmp`: jobs writing heavily to `/tmp` (builds, tars) hit the OOM limit sooner than the headline number suggests.
+- The runner caps at `mem_limit: 6g` and `pids_limit: 384`: heavy release builds fit, runaway jobs get killed instead of taking the host down.
 
 ## Development
 
